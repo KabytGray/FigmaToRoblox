@@ -1,10 +1,15 @@
 {
   "name": "FigmaToRoblox",
-  "id": "figma-to-roblox",
+  "id": "1665055508430740683",
   "api": "1.0.0",
   "main": "dist/code.js",
   "ui": "dist/ui.html",
   "capabilities": [],
   "enableProposedApi": false,
-  "editorType": ["figma"]
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": ["https://*.workers.dev"],
+    "reasoning": "The plugin sends the exported design to the user's own Cloudflare Worker, deployed by the installer at a *.workers.dev address. No other network access is made."
+  }
 }
