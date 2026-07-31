@@ -1,0 +1,13 @@
+{
+  "name": "figma-to-roblox-plugin",
+  "version": "1.0.0",
+  "description": "Plugin Figma para exportar designs para Roblox",
+  "scripts": {
+    "dev": "tsc --watch",
+    "build": "tsc && node build.js"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.100.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "figma-to-roblox",
+  "version": "1.0.0",
+  "description": "Sistema profissional de sincronização entre Figma e Roblox Studio",
+  "private": true,
+  "scripts": {
+    "figma:dev": "cd figma-plugin && npm run dev",
+    "figma:build": "cd figma-plugin && npm run build",
+    "worker:dev": "cd cloudflare-worker && npm run dev",
+    "worker:deploy": "cd cloudflare-worker && npm run deploy",
+    "rojo:build": "cd roblox-plugin && rojo build -o out.rbxl"
+  }
+}

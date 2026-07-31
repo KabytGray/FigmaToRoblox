@@ -1,0 +1,12 @@
+name = "figma-to-roblox-worker"
+main = "src/index.ts"
+compatibility_date = "2025-07-22"
+
+# Este arquivo é o TEMPLATE. INSTALAR.bat copia ele para wrangler.toml (que é
+# gitignorado) e preenche o id do KV criado na sua conta.
+[[kv_namespaces]]
+binding = "FIGMA_DATA"
+id = ""
+
+[vars]
+ENVIRONMENT = "production"

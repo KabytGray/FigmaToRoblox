@@ -1,0 +1,24 @@
+# segredos — se isso vazar, a chave do Roblox vai para o mundo
+apikey.txt
+config.json
+
+# gerado pelo INSTALAR.bat a partir de wrangler.example.toml — cada usuário tem
+# o próprio id de KV, não faz sentido versionar
+cloudflare-worker/wrangler.toml
+
+# geral
+node_modules/
+dist/
+out/
+.env
+*.rbxl
+.DS_Store
+
+# artefatos de teste e outputs
+body.bin
+headers.txt
+request.json
+test.png
+teste.png
+package-lock.json
+.wrangler/
