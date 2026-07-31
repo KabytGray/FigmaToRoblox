@@ -22,3 +22,7 @@ test.png
 teste.png
 package-lock.json
 .wrangler/
+
+# notas internas — ficam so no seu PC
+HANDOFF.md
+COMPETITORS.md
