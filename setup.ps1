@@ -1,5 +1,5 @@
 # =============================================================================
-# FigmaToRoblox — instalacao em um comando
+# FigmaToRoblox - instalacao em um comando
 # =============================================================================
 # Faz tudo que antes era manual: instala dependencias, publica o seu Worker na
 # Cloudflare, cria o banco KV, guarda a sua API Key do Roblox e instala o plugin
@@ -34,7 +34,7 @@ function Erro($texto) { Write-Host "  [erro] $texto" -ForegroundColor Red }
 #
 # Existe por causa de um comportamento do PowerShell 5.1 que ja quebrou esta
 # instalacao: quando um .exe escreve em stderr, o PowerShell embrulha cada linha
-# num ErrorRecord — e com $ErrorActionPreference = "Stop" isso vira erro
+# num ErrorRecord - e com $ErrorActionPreference = "Stop" isso vira erro
 # TERMINANTE. Resultado: um aviso inofensivo do wrangler ("sua versao esta
 # desatualizada") abortava a instalacao inteira no meio.
 #
@@ -56,14 +56,35 @@ try {
 Titulo "1. Node.js"
 
 $node = Get-Command node -ErrorAction SilentlyContinue
+
 if (-not $node) {
-    Erro "Node.js nao encontrado."
-    Write-Host ""
-    Write-Host "  Baixe a versao LTS em https://nodejs.org e rode este comando de novo."
-    Write-Host "  (o instalador padrao serve; nao precisa mudar nada)"
-    Write-Host ""
-    Start-Process "https://nodejs.org"
-    return
+    # Instala sozinho pelo winget, que ja vem no Windows 10/11. Antes daqui a
+    # pessoa era mandada para o nodejs.org e tinha que voltar e rodar tudo de
+    # novo - o ponto onde a maioria desistia, logo no primeiro passo.
+    Info "Node.js nao encontrado - instalando automaticamente"
+
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+        Rodar "winget install OpenJS.NodeJS.LTS --silent --accept-source-agreements --accept-package-agreements" | Out-Null
+
+        # O winget mexe no PATH do sistema, mas a janela atual ficou com o PATH
+        # antigo. Sem reler, o "node" continua sumido mesmo apos instalar.
+        $pathMaquina = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        $pathUsuario = [Environment]::GetEnvironmentVariable("Path", "User")
+        $env:Path = "$pathMaquina;$pathUsuario"
+        $node = Get-Command node -ErrorAction SilentlyContinue
+    }
+
+    if (-not $node) {
+        Erro "nao consegui instalar o Node.js sozinho."
+        Write-Host ""
+        Write-Host "  Baixe a versao LTS em https://nodejs.org (o instalador padrao serve),"
+        Write-Host "  feche esta janela, abra o PowerShell de novo e cole o mesmo comando."
+        Write-Host ""
+        Start-Process "https://nodejs.org"
+        return
+    }
+    Ok "Node.js instalado"
 }
 
 Ok "Node $(Rodar 'node --version' | ForEach-Object { $_.Trim() })"
@@ -81,7 +102,7 @@ foreach ($pasta in @("cloudflare-worker", "figma-plugin")) {
             $r = Rodar "npm install --silent"
             Pop-Location
             if ($LASTEXITCODE -ne 0) {
-                Erro "npm install falhou em $pasta:"
+                Erro "npm install falhou em ${pasta}:"
                 Write-Host $r
                 return
             }
@@ -94,7 +115,7 @@ foreach ($pasta in @("cloudflare-worker", "figma-plugin")) {
 Titulo "3. Servidor na Cloudflare"
 
 # Se ja existe um Worker que responde, nao ha o que refazer. E o caminho de quem
-# so rodou o comando de novo — que deve terminar em segundos, nao repetir tudo.
+# so rodou o comando de novo - que deve terminar em segundos, nao repetir tudo.
 $configPath = "$root\config.json"
 $workerUrl = $null
 
@@ -214,11 +235,20 @@ if (Test-Path $configPath) {
 if ($config.userId) {
     Ok "userId $($config.userId) ja salvo"
 } else {
-    Write-Host "  As imagens sobem para a sua conta, entao preciso do seu userId." -ForegroundColor Gray
-    Write-Host "  Esta no link do seu perfil: roblox.com/users/" -NoNewline -ForegroundColor DarkGray
-    Write-Host "SEUID" -NoNewline -ForegroundColor White
-    Write-Host "/profile" -ForegroundColor DarkGray
-    $config.userId = (Read-Host "  Seu userId").Trim()
+    Write-Host "  As imagens sobem para a sua conta, entao preciso do seu ID." -ForegroundColor Gray
+    Write-Host "  Pode colar o link do seu perfil inteiro que eu extraio." -ForegroundColor DarkGray
+    Write-Host ""
+
+    # Aceita o link inteiro alem do numero: colar a URL do perfil e o que a
+    # pessoa faz naturalmente, e exigir "so o numero" so gera erro de digitacao.
+    do {
+        $resposta = (Read-Host "  Seu perfil ou ID").Trim()
+        if ($resposta -match '(\d{4,})') {
+            $config.userId = $Matches[1]
+        } else {
+            Aviso "nao achei um ID ai. Exemplo: roblox.com/users/4024894937/profile"
+        }
+    } while (-not $config.userId)
 }
 
 $config | ConvertTo-Json | Set-Content $configPath -Encoding utf8
@@ -244,7 +274,7 @@ Ok "plugin do Figma compilado"
 
 # --------------------------------------------------------- 7. atalho ---------
 # O uploader precisa estar rodando enquanto a pessoa trabalha. Pedir para ela
-# decorar um caminho e digitar um comando toda vez e onde a maioria desiste —
+# decorar um caminho e digitar um comando toda vez e onde a maioria desiste -
 # um atalho na area de trabalho resolve com dois cliques, para sempre.
 Titulo "7. Atalho do uploader"
 
@@ -285,7 +315,7 @@ Write-Host ""
 $abrir = Read-Host "  Abrir o uploader agora? (S/n)"
 if ($abrir -ne "n") {
     Start-Process "cmd.exe" -ArgumentList "/c", "`"$root\start-uploader.bat`""
-    Ok "uploader aberto numa janela nova — deixe minimizado"
+    Ok "uploader aberto numa janela nova - deixe minimizado"
 }
 
 Write-Host ""
@@ -294,7 +324,7 @@ Write-Host "  Se ele te ajudar, uma avaliacao no perfil ajuda outras pessoas a a
 Write-Host ""
 
 } finally {
-    # Sem isto, um erro no meio larga a pessoa dentro de cloudflare-worker — foi
+    # Sem isto, um erro no meio larga a pessoa dentro de cloudflare-worker - foi
     # exatamente o que aconteceu quando o wrangler abortou a instalacao.
     Set-Location $voltarPara
 }

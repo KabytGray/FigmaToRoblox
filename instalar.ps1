@@ -1,5 +1,5 @@
 # =============================================================================
-# FigmaToRoblox — instalacao em UM comando
+# FigmaToRoblox - instalacao em UM comando
 # =============================================================================
 # Este arquivo existe para ser executado direto da internet, sem baixar nada
 # antes:
@@ -10,7 +10,7 @@
 #
 # Por que um bootstrap separado do setup.ps1: o setup precisa dos arquivos do
 # projeto ao lado dele (worker, uploader, plugins). Este aqui nao precisa de
-# nada — e por isso pode rodar colado no PowerShell, que e o que a pessoa
+# nada - e por isso pode rodar colado no PowerShell, que e o que a pessoa
 # tenta fazer naturalmente.
 # =============================================================================
 
