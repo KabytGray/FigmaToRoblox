@@ -1161,7 +1161,8 @@ figma.ui.onmessage = async (msg: any) => {
         constraints: (await figma.clientStorage.getAsync("constraints")) === true,
         uploaderCmd: (await figma.clientStorage.getAsync("uploaderCmd")) || "",
         theme: (await figma.clientStorage.getAsync("theme")) || "dark",
-        accent: (await figma.clientStorage.getAsync("accent")) || "blue"
+        accent: (await figma.clientStorage.getAsync("accent")) || "blue",
+        robloxUserId: (await figma.clientStorage.getAsync("robloxUserId")) || ""
       });
       reportSelection();
       return;
@@ -1176,6 +1177,7 @@ figma.ui.onmessage = async (msg: any) => {
       await figma.clientStorage.setAsync("constraints", msg.constraints === true);
       await figma.clientStorage.setAsync("theme", msg.theme || "dark");
       await figma.clientStorage.setAsync("accent", msg.accent || "blue");
+      await figma.clientStorage.setAsync("robloxUserId", msg.robloxUserId || "");
       return;
     }
 

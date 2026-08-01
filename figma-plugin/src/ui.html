@@ -628,6 +628,9 @@
       <div class="row stack">
         <input type="text" id="workerUrl" placeholder="https://seu-worker.workers.dev" spellcheck="false">
         <input type="password" id="token" placeholder="Token (opcional)">
+        <!-- Aceita o link do perfil inteiro: e o que a pessoa tem na mao. O
+             numero e extraido na hora de salvar. -->
+        <input type="text" id="robloxUser" placeholder="Seu ID do Roblox (ou link do perfil)" spellcheck="false">
       </div>
       <div id="settings" style="display:none"></div>
 
@@ -711,11 +714,24 @@
     $("analyzeBtn").disabled = on || st.selection === 0;
   }
 
+  // Extrai o numero de qualquer coisa que a pessoa cole: o link do perfil, o
+  // link com idioma (/pt/users/...), ou o id puro. Devolve "" se nao houver
+  // numero nenhum, para nao salvar lixo.
+  function soDigitos(texto){
+    var achado = String(texto || "").match(/(\d{4,})/);
+    return achado ? achado[1] : "";
+  }
+
   function save(){
+    var idRoblox = soDigitos($("robloxUser").value);
+    // Normaliza o campo na tela: quem colou o link ve o id que ficou salvo, em
+    // vez de continuar olhando para a URL e sem saber se funcionou.
+    if (idRoblox) $("robloxUser").value = idRoblox;
+
     send({ type:"save-settings", workerUrl:$("workerUrl").value.trim(),
            token:$("token").value.trim(), scale:st.scale, rasterize:st.rasterize,
            constraints:st.constraints, uploaderCmd:$("cmdText").value.trim(),
-           theme:st.theme, accent:st.accent });
+           theme:st.theme, accent:st.accent, robloxUserId:idRoblox });
   }
 
   function copy(text, button){
@@ -1205,6 +1221,7 @@
   $("workerUrl").addEventListener("change", save);
   $("token").addEventListener("change", save);
   $("cmdText").addEventListener("change", save);
+  $("robloxUser").addEventListener("change", save);
   $("copyCmd").addEventListener("click", function(){ copy($("cmdText").value, this); });
   $("copyBtn").addEventListener("click", function(){ copy($("exportId").textContent, this); });
 
@@ -1240,6 +1257,7 @@
       $("workerUrl").value = m.workerUrl || "";
       $("token").value = m.token || "";
       $("cmdText").value = m.uploaderCmd || DEFAULT_CMD;
+      $("robloxUser").value = m.robloxUserId || "";
       st.scale = m.scale || 2;
       st.rasterize = m.rasterize !== false;
       st.constraints = m.constraints === true;
