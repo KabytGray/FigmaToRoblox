@@ -46,6 +46,18 @@ function Rodar($comando) {
     return ($saida | Out-String)
 }
 
+# -----------------------------------------------------------------------------
+# Grava texto em UTF-8 SEM BOM.
+#
+# "Set-Content -Encoding utf8" no PowerShell 5.1 escreve UTF-8 COM BOM, e o BOM
+# quebra quem le o arquivo depois: JSON.parse morre no primeiro caractere (o
+# uploader recusava um config.json perfeitamente valido) e o parser de TOML do
+# wrangler tambem se perde.
+# -----------------------------------------------------------------------------
+function GravarTexto($caminho, $texto) {
+    [System.IO.File]::WriteAllText($caminho, $texto, (New-Object System.Text.UTF8Encoding($false)))
+}
+
 Write-Host ""
 Write-Host "  FigmaToRoblox" -ForegroundColor Magenta -NoNewline
 Write-Host "  instalacao" -ForegroundColor DarkGray
@@ -160,7 +172,7 @@ if (-not $workerUrl) {
         } elseif ($listaKv -match '"id":\s*"([a-f0-9]{32})"[^}]*"title":\s*"[^"]*FIGMA_DATA') {
             $reuseId = $Matches[1]
             $toml = $toml -replace 'id\s*=\s*"[a-f0-9]*"', ('id = "' + $reuseId + '"')
-            Set-Content "wrangler.toml" $toml -Encoding utf8
+            GravarTexto "$PWD\wrangler.toml" $toml
             Ok "banco KV FIGMA_DATA reaproveitado ($reuseId)"
         } else {
             Info "criando o banco KV"
@@ -168,7 +180,7 @@ if (-not $workerUrl) {
             if ($saida -match '([a-f0-9]{32})') {
                 $novoId = $Matches[1]
                 $toml = $toml -replace 'id\s*=\s*"[a-f0-9]*"', ('id = "' + $novoId + '"')
-                Set-Content "wrangler.toml" $toml -Encoding utf8
+                GravarTexto "$PWD\wrangler.toml" $toml
                 Ok "banco KV criado ($novoId)"
             } else {
                 Erro "nao consegui criar o KV. Saida:"
@@ -251,7 +263,7 @@ if ($config.userId) {
     } while (-not $config.userId)
 }
 
-$config | ConvertTo-Json | Set-Content $configPath -Encoding utf8
+GravarTexto $configPath ($config | ConvertTo-Json)
 Ok "config.json salvo"
 
 # ------------------------------------------------------- 6. plugin Studio ----

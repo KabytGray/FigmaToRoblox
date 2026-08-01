@@ -39,7 +39,11 @@ function loadConfig() {
   const configPath = path.join(HERE, "config.json");
   if (fs.existsSync(configPath)) {
     try {
-      Object.assign(defaults, JSON.parse(fs.readFileSync(configPath, "utf8")));
+      // replace(/^﻿/) porque o Set-Content do PowerShell 5.1 grava UTF-8
+      // COM BOM, e o JSON.parse morre no primeiro caractere. Sem isto o
+      // uploader recusa um config.json que esta perfeitamente correto.
+      const bruto = fs.readFileSync(configPath, "utf8").replace(/^﻿/, "");
+      Object.assign(defaults, JSON.parse(bruto));
     } catch (e) {
       fail("config.json invalido: " + e.message);
     }
