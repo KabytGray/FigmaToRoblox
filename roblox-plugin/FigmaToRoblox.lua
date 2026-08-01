@@ -86,11 +86,14 @@ local INSTALL_CMD =
 	"irm https://raw.githubusercontent.com/KabytGray/FigmaToRoblox/main/instalar.ps1 | iex"
 
 -- String longa: barras invertidas ficam literais, sem escape.
--- $env:USERPROFILE e a forma do PowerShell (nao %USERPROFILE%, que so o cmd
--- expande) — e e no PowerShell que a dica manda colar. O instalador sempre
--- extrai em Documentos\FigmaToRoblox, entao o caminho vale para qualquer PC.
-local DEFAULT_CMD = [[node "$env:USERPROFILE\Documents\FigmaToRoblox\uploader.js"]]
-local DEFAULT_HINT = "Clique no campo, Ctrl+A, Ctrl+C e cole no PowerShell.\nDeixe a janela aberta enquanto trabalha."
+--
+-- GetFolderPath('MyDocuments') em vez de "$env:USERPROFILE\Documents": quem usa
+-- OneDrive tem a pasta Documentos redirecionada para dentro do OneDrive, e o
+-- caminho fixo aponta para uma pasta que nao existe. Esta e a MESMA chamada que
+-- o instalador usa para escolher onde extrair, entao os dois sempre combinam.
+local DEFAULT_CMD =
+	[[node "$([Environment]::GetFolderPath('MyDocuments'))\FigmaToRoblox\uploader.js"]]
+local DEFAULT_HINT = "Mais facil: de dois cliques no atalho 'FigmaToRoblox uploader'\nna area de trabalho. Ou cole este comando no PowerShell."
 
 -- ============================================================================
 -- TEMA
@@ -3180,7 +3183,8 @@ local function buildOnboarding()
 	-- Passo 3 — o uploader rodando.
 	local stepUploader = stepRow(4,
 		"Uploader aberto",
-		"Abra start-uploader.bat da pasta e deixe a janela minimizada enquanto trabalha.",
+		"De dois cliques no atalho 'FigmaToRoblox uploader' na area de trabalho e " ..
+		"deixe a janela minimizada enquanto trabalha.",
 		"copiar",
 		function() end)
 

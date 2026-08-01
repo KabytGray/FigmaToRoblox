@@ -9,10 +9,14 @@
 #
 # Cada usuario usa a PROPRIA chave e o PROPRIO Worker. Nada passa por servidor
 # de terceiros, e a cota da Cloudflare e do Roblox e sua.
+#
+# Rodar de novo e seguro: o que ja esta feito e detectado e pulado. Nada de
+# refazer login, recriar banco ou pedir a chave outra vez.
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$voltarPara = (Get-Location).Path
 Set-Location $root
 
 function Titulo($texto) {
@@ -25,9 +29,28 @@ function Info($texto) { Write-Host "  ...    $texto" -ForegroundColor Gray }
 function Aviso($texto){ Write-Host "  [!]    $texto" -ForegroundColor Yellow }
 function Erro($texto) { Write-Host "  [erro] $texto" -ForegroundColor Red }
 
+# -----------------------------------------------------------------------------
+# Roda um programa externo e devolve TUDO que ele imprimiu, como texto.
+#
+# Existe por causa de um comportamento do PowerShell 5.1 que ja quebrou esta
+# instalacao: quando um .exe escreve em stderr, o PowerShell embrulha cada linha
+# num ErrorRecord — e com $ErrorActionPreference = "Stop" isso vira erro
+# TERMINANTE. Resultado: um aviso inofensivo do wrangler ("sua versao esta
+# desatualizada") abortava a instalacao inteira no meio.
+#
+# Passar por "cmd /c ... 2>&1" junta os dois fluxos ANTES do PowerShell ver,
+# entao aviso continua sendo aviso. O codigo de saida real vem em $LASTEXITCODE.
+# -----------------------------------------------------------------------------
+function Rodar($comando) {
+    $saida = & cmd /c "$comando 2>&1"
+    return ($saida | Out-String)
+}
+
 Write-Host ""
 Write-Host "  FigmaToRoblox" -ForegroundColor Magenta -NoNewline
 Write-Host "  instalacao" -ForegroundColor DarkGray
+
+try {
 
 # --------------------------------------------------------------- 1. Node -----
 Titulo "1. Node.js"
@@ -36,101 +59,117 @@ $node = Get-Command node -ErrorAction SilentlyContinue
 if (-not $node) {
     Erro "Node.js nao encontrado."
     Write-Host ""
-    Write-Host "  Baixe a versao LTS em https://nodejs.org e rode este script de novo."
+    Write-Host "  Baixe a versao LTS em https://nodejs.org e rode este comando de novo."
     Write-Host "  (o instalador padrao serve; nao precisa mudar nada)"
     Write-Host ""
     Start-Process "https://nodejs.org"
-    exit 1
+    return
 }
 
-$versao = (& node --version)
-Ok "Node $versao"
+Ok "Node $(Rodar 'node --version' | ForEach-Object { $_.Trim() })"
 
 # ------------------------------------------------------- 2. dependencias -----
 Titulo "2. Dependencias"
 
 foreach ($pasta in @("cloudflare-worker", "figma-plugin")) {
     if (Test-Path "$root\$pasta\package.json") {
-        Info "instalando em $pasta (pode demorar na primeira vez)"
-        Push-Location "$root\$pasta"
-        & npm install --silent 2>&1 | Out-Null
-        Pop-Location
-        Ok "$pasta pronto"
+        if (Test-Path "$root\$pasta\node_modules") {
+            Ok "$pasta ja instalado"
+        } else {
+            Info "instalando em $pasta (pode demorar na primeira vez)"
+            Push-Location "$root\$pasta"
+            $r = Rodar "npm install --silent"
+            Pop-Location
+            if ($LASTEXITCODE -ne 0) {
+                Erro "npm install falhou em $pasta:"
+                Write-Host $r
+                return
+            }
+            Ok "$pasta pronto"
+        }
     }
 }
 
 # ---------------------------------------------------------- 3. Cloudflare ----
 Titulo "3. Servidor na Cloudflare"
 
-Push-Location "$root\cloudflare-worker"
+# Se ja existe um Worker que responde, nao ha o que refazer. E o caminho de quem
+# so rodou o comando de novo — que deve terminar em segundos, nao repetir tudo.
+$configPath = "$root\config.json"
+$workerUrl = $null
 
-# Primeiro uso: copia o template. wrangler.toml e gitignorado porque cada
-# usuario preenche o proprio id de KV.
-if (-not (Test-Path "wrangler.toml") -and (Test-Path "wrangler.example.toml")) {
-    Copy-Item "wrangler.example.toml" "wrangler.toml"
-    Ok "wrangler.toml criado a partir do template"
+if (Test-Path $configPath) {
+    try {
+        $jaTem = Get-Content $configPath -Raw | ConvertFrom-Json
+        if ($jaTem.workerUrl) {
+            $ping = try {
+                Invoke-RestMethod -Uri ($jaTem.workerUrl.TrimEnd("/") + "/api/health") -TimeoutSec 8
+            } catch { $null }
+            if ($ping) {
+                $workerUrl = $jaTem.workerUrl
+                Ok "Worker ja no ar: $workerUrl"
+            }
+        }
+    } catch {}
 }
 
-# A conta e gratuita e o login abre no navegador.
-$conta = & npx wrangler whoami 2>&1 | Out-String
-if ($conta -match "not authenticated|You are not") {
-    Info "abrindo o login da Cloudflare no navegador"
-    Write-Host "  (crie a conta gratuita se ainda nao tiver, e autorize)" -ForegroundColor DarkGray
-    & npx wrangler login
-} else {
-    Ok "ja autenticado na Cloudflare"
-}
+if (-not $workerUrl) {
+    Push-Location "$root\cloudflare-worker"
+    try {
+        if (-not (Test-Path "wrangler.toml") -and (Test-Path "wrangler.example.toml")) {
+            Copy-Item "wrangler.example.toml" "wrangler.toml"
+            Ok "wrangler.toml criado a partir do template"
+        }
 
-# O KV guarda os exports. Se wrangler.toml ainda tem o id de exemplo, cria um
-# banco novo e grava o id — e o passo que mais gerava erro quando era manual.
-$toml = Get-Content "wrangler.toml" -Raw
+        $conta = Rodar "npx wrangler whoami"
+        if ($conta -match "not authenticated|You are not") {
+            Info "abrindo o login da Cloudflare no navegador"
+            Write-Host "  (crie a conta gratuita se ainda nao tiver, e autorize)" -ForegroundColor DarkGray
+            & npx wrangler login
+        } else {
+            Ok "ja autenticado na Cloudflare"
+        }
 
-# Reaproveita o KV existente da conta se ja houver — evita encher a Cloudflare
-# de bancos ao reinstalar. Cria um novo so na primeira vez.
-$idAtual = if ($toml -match 'id\s*=\s*"([a-f0-9]{32})"') { $Matches[1] } else { "" }
-$listaKv = & npx wrangler kv namespace list 2>&1 | Out-String
-$precisaKv = -not ($idAtual -and $listaKv -match $idAtual)
+        $toml = Get-Content "wrangler.toml" -Raw
+        $idAtual = if ($toml -match 'id\s*=\s*"([a-f0-9]{32})"') { $Matches[1] } else { "" }
+        $listaKv = Rodar "npx wrangler kv namespace list"
 
-if (-not $precisaKv) {
-    Ok "banco KV existente ($idAtual)"
-} elseif ($listaKv -match '"id":\s*"([a-f0-9]{32})"[^}]*"title":\s*"[^"]*FIGMA_DATA') {
-    # Ja existe um KV com o nome certo em outra pasta/reinstalacao — reusa.
-    $reuseId = $Matches[1]
-    $toml = $toml -replace 'id\s*=\s*""', ('id = "' + $reuseId + '"')
-    Set-Content "wrangler.toml" $toml -Encoding utf8
-    Ok "banco KV FIGMA_DATA reaproveitado ($reuseId)"
-} else {
-    Info "criando o banco KV"
-    $saida = & npx wrangler kv namespace create FIGMA_DATA 2>&1 | Out-String
-    if ($saida -match '([a-f0-9]{32})') {
-        $novoId = $Matches[1]
-        # Aceita tanto o id vazio quanto um id antigo, para funcionar em quem
-        # baixou do repo (vazio) e em quem ja tinha (velho).
-        $toml = $toml -replace 'id\s*=\s*"[a-f0-9]*"', ('id = "' + $novoId + '"')
-        Set-Content "wrangler.toml" $toml -Encoding utf8
-        Ok "banco KV criado ($novoId)"
-    } else {
-        Erro "nao consegui criar o KV. Saida:"
-        Write-Host $saida
+        if ($idAtual -and $listaKv -match $idAtual) {
+            Ok "banco KV existente ($idAtual)"
+        } elseif ($listaKv -match '"id":\s*"([a-f0-9]{32})"[^}]*"title":\s*"[^"]*FIGMA_DATA') {
+            $reuseId = $Matches[1]
+            $toml = $toml -replace 'id\s*=\s*"[a-f0-9]*"', ('id = "' + $reuseId + '"')
+            Set-Content "wrangler.toml" $toml -Encoding utf8
+            Ok "banco KV FIGMA_DATA reaproveitado ($reuseId)"
+        } else {
+            Info "criando o banco KV"
+            $saida = Rodar "npx wrangler kv namespace create FIGMA_DATA"
+            if ($saida -match '([a-f0-9]{32})') {
+                $novoId = $Matches[1]
+                $toml = $toml -replace 'id\s*=\s*"[a-f0-9]*"', ('id = "' + $novoId + '"')
+                Set-Content "wrangler.toml" $toml -Encoding utf8
+                Ok "banco KV criado ($novoId)"
+            } else {
+                Erro "nao consegui criar o KV. Saida:"
+                Write-Host $saida
+                return
+            }
+        }
+
+        Info "publicando o Worker"
+        $deploy = Rodar "npx wrangler deploy"
+        if ($deploy -match '(https://[a-z0-9\-\.]+\.workers\.dev)') {
+            $workerUrl = $Matches[1]
+            Ok "Worker no ar: $workerUrl"
+        } else {
+            Erro "o deploy nao devolveu uma URL. Saida:"
+            Write-Host $deploy
+            return
+        }
+    } finally {
         Pop-Location
-        exit 1
     }
 }
-
-Info "publicando o Worker"
-$deploy = & npx wrangler deploy 2>&1 | Out-String
-$workerUrl = $null
-if ($deploy -match '(https://[a-z0-9\-\.]+\.workers\.dev)') { $workerUrl = $Matches[1] }
-
-if ($workerUrl) {
-    Ok "Worker no ar: $workerUrl"
-} else {
-    Erro "o deploy nao devolveu uma URL. Saida:"
-    Write-Host $deploy
-    Pop-Location
-    exit 1
-}
-Pop-Location
 
 # ------------------------------------------------------------- 4. API Key ----
 Titulo "4. Chave do Roblox"
@@ -153,8 +192,8 @@ if ($temChave) {
 
     $chave = Read-Host "  Cole a chave aqui"
     if ($chave.Trim().Length -lt 20) {
-        Erro "chave curta demais, parece invalida. Rode o script de novo."
-        exit 1
+        Erro "chave curta demais, parece invalida. Rode o comando de novo."
+        return
     }
     Set-Content $keyPath $chave.Trim() -Encoding ascii -NoNewline
     Ok "apikey.txt salvo"
@@ -163,15 +202,18 @@ if ($temChave) {
 # --------------------------------------------------------- 5. seu userId -----
 Titulo "5. Seu ID do Roblox"
 
-$configPath = "$root\config.json"
 $config = @{ workerUrl = $workerUrl; userId = ""; pollSeconds = 4; concurrency = 3 }
 
 if (Test-Path $configPath) {
-    $atual = Get-Content $configPath -Raw | ConvertFrom-Json
-    if ($atual.userId) { $config.userId = $atual.userId }
+    try {
+        $atual = Get-Content $configPath -Raw | ConvertFrom-Json
+        if ($atual.userId) { $config.userId = $atual.userId }
+    } catch {}
 }
 
-if (-not $config.userId) {
+if ($config.userId) {
+    Ok "userId $($config.userId) ja salvo"
+} else {
     Write-Host "  As imagens sobem para a sua conta, entao preciso do seu userId." -ForegroundColor Gray
     Write-Host "  Esta no link do seu perfil: roblox.com/users/" -NoNewline -ForegroundColor DarkGray
     Write-Host "SEUID" -NoNewline -ForegroundColor White
@@ -183,45 +225,76 @@ $config | ConvertTo-Json | Set-Content $configPath -Encoding utf8
 Ok "config.json salvo"
 
 # ------------------------------------------------------- 6. plugin Studio ----
-Titulo "6. Plugin do Roblox Studio"
+Titulo "6. Plugins"
 
 Push-Location "$root\roblox-plugin"
-& node build.js --install 2>&1 | Select-String "instalado" | ForEach-Object { Ok $_.ToString().Trim() }
+$saidaPlugin = Rodar "node build.js --install"
 Pop-Location
-
-# --------------------------------------------------------- 7. plugin Figma ---
-Titulo "7. Plugin do Figma"
+if ($saidaPlugin -match "instalado") {
+    Ok "plugin do Studio instalado"
+} else {
+    Aviso "o plugin do Studio pode nao ter sido instalado. Saida:"
+    Write-Host $saidaPlugin
+}
 
 Push-Location "$root\figma-plugin"
-& npm run build 2>&1 | Out-Null
+$saidaFigma = Rodar "npm run build"
 Pop-Location
-Ok "compilado em figma-plugin\dist"
+Ok "plugin do Figma compilado"
+
+# --------------------------------------------------------- 7. atalho ---------
+# O uploader precisa estar rodando enquanto a pessoa trabalha. Pedir para ela
+# decorar um caminho e digitar um comando toda vez e onde a maioria desiste —
+# um atalho na area de trabalho resolve com dois cliques, para sempre.
+Titulo "7. Atalho do uploader"
+
+try {
+    $desktop = [Environment]::GetFolderPath("Desktop")
+    $atalho = Join-Path $desktop "FigmaToRoblox uploader.lnk"
+    $shell = New-Object -ComObject WScript.Shell
+    $lnk = $shell.CreateShortcut($atalho)
+    $lnk.TargetPath = "$root\start-uploader.bat"
+    $lnk.WorkingDirectory = $root
+    $lnk.Description = "Sobe as imagens do Figma para o Roblox. Deixe aberto enquanto trabalha."
+    $lnk.Save()
+    Ok "atalho criado na area de trabalho"
+} catch {
+    Aviso "nao consegui criar o atalho (siga por start-uploader.bat na pasta)"
+}
 
 # ------------------------------------------------------------------ fim ------
 Write-Host ""
 Write-Host "  Tudo pronto." -ForegroundColor Green
 Write-Host ""
-Write-Host "  Falta so isto:" -ForegroundColor White
-Write-Host ""
-Write-Host "   1. Reinicie o Roblox Studio (o plugin aparece na barra de plugins)"
-Write-Host "   2. No Figma: Plugins > Development > Import plugin from manifest"
-Write-Host "      escolha:  $root\figma-plugin\manifest.json"
-Write-Host "   3. Cole esta URL na aba Config dos dois plugins:"
+Write-Host "  A sua URL (ja salva, nao precisa guardar):" -ForegroundColor White
 Write-Host ""
 Write-Host "      $workerUrl" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "   4. Deixe o uploader aberto enquanto trabalha:"
+Write-Host "  Falta so isto:" -ForegroundColor White
 Write-Host ""
-Write-Host "      start-uploader.bat" -ForegroundColor Cyan
+Write-Host "   1. Reinicie o Roblox Studio (o plugin aparece na barra de plugins)"
+Write-Host "   2. Na aba Config do plugin, cole a URL acima"
+Write-Host "   3. No Figma: Plugins > Development > Import plugin from manifest"
+Write-Host "      escolha:  $root\figma-plugin\manifest.json"
+Write-Host ""
+Write-Host "  Daqui para frente, para usar o plugin basta abrir o atalho" -ForegroundColor DarkGray
+Write-Host "  'FigmaToRoblox uploader' na area de trabalho. Nao precisa" -ForegroundColor DarkGray
+Write-Host "  instalar de novo." -ForegroundColor DarkGray
 Write-Host ""
 
-$abrir = Read-Host "  Abrir o uploader agora? (s/n)"
-if ($abrir -eq "s") {
+$abrir = Read-Host "  Abrir o uploader agora? (S/n)"
+if ($abrir -ne "n") {
     Start-Process "cmd.exe" -ArgumentList "/c", "`"$root\start-uploader.bat`""
-    Ok "uploader aberto numa janela nova"
+    Ok "uploader aberto numa janela nova — deixe minimizado"
 }
 
 Write-Host ""
 Write-Host "  FigmaToRoblox e gratuito, feito por KabytGray." -ForegroundColor DarkGray
 Write-Host "  Se ele te ajudar, uma avaliacao no perfil ajuda outras pessoas a acharem." -ForegroundColor DarkGray
 Write-Host ""
+
+} finally {
+    # Sem isto, um erro no meio larga a pessoa dentro de cloudflare-worker — foi
+    # exatamente o que aconteceu quando o wrangler abortou a instalacao.
+    Set-Location $voltarPara
+}
