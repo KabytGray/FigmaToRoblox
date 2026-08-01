@@ -49,6 +49,33 @@ function loadConfig() {
     }
   }
 
+  // --server=URL e --user=ID: trocar de servidor sem reinstalar nem editar JSON
+  // na mao. O valor fica gravado, entao vale para as proximas vezes tambem.
+  let alterou = false;
+  for (const arg of process.argv.slice(2)) {
+    const serv = arg.match(/^--server=(.+)$/);
+    const usu = arg.match(/^--user=(.+)$/);
+    if (serv) {
+      defaults.workerUrl = serv[1].trim().replace(/\/+$/, "");
+      alterou = true;
+    } else if (usu) {
+      const num = usu[1].match(/(\d{4,})/);
+      if (!num) fail("--user precisa de um ID numerico. Ex: --user=4024894937");
+      defaults.userId = num[1];
+      alterou = true;
+    }
+  }
+
+  if (alterou) {
+    const guardar = {
+      workerUrl: defaults.workerUrl, userId: defaults.userId,
+      pollSeconds: defaults.pollSeconds, concurrency: defaults.concurrency
+    };
+    if (defaults.authToken) guardar.authToken = defaults.authToken;
+    fs.writeFileSync(configPath, JSON.stringify(guardar, null, 2), "utf8");
+    console.log("  config.json atualizado.");
+  }
+
   if (!defaults.apiKey) {
     const keyPath = path.join(HERE, "apikey.txt");
     if (!fs.existsSync(keyPath)) {
@@ -61,10 +88,19 @@ function loadConfig() {
   if (!defaults.apiKey) fail("apikey.txt esta vazio.");
 
   if (!defaults.workerUrl) {
-    fail("config.json sem workerUrl.\nRode INSTALAR.bat na pasta do projeto — ele publica o seu Worker e grava a URL aqui.");
+    // Mostrar a PASTA e essencial: quando existe mais de uma copia do projeto,
+    // o erro vem da que nao tem config.json, e sem o caminho a pessoa fica
+    // procurando defeito na instalacao que esta correta.
+    fail("sem servidor configurado.\n" +
+         "  Lendo de: " + HERE + "\n\n" +
+         "  Para apontar para o seu servidor, rode:\n" +
+         "    node uploader.js --server=https://seu-worker.workers.dev");
   }
   if (!defaults.userId) {
-    fail("config.json sem userId.\nRode INSTALAR.bat de novo para preencher, ou edite o arquivo a mao.");
+    fail("sem userId configurado.\n" +
+         "  Lendo de: " + HERE + "\n\n" +
+         "  Para preencher, rode:\n" +
+         "    node uploader.js --user=SEU_ID_DO_ROBLOX");
   }
 
   defaults.workerUrl = defaults.workerUrl.replace(/\/+$/, "");
@@ -287,7 +323,11 @@ async function main() {
 
   console.log("");
   console.log(C.magenta + C.bold + "  FigmaToRoblox " + C.reset + C.dim + "uploader" + C.reset);
-  console.log(C.dim + "  " + config.workerUrl + C.reset);
+  console.log(C.dim + "  servidor: " + C.reset + config.workerUrl);
+  // A pasta importa quando existe mais de uma copia do projeto: e a unica forma
+  // de saber qual config.json esta valendo sem ficar adivinhando.
+  console.log(C.dim + "  pasta:    " + HERE + C.reset);
+  console.log(C.dim + "  (trocar: node uploader.js --server=URL)" + C.reset);
 
   try {
     const health = await fetch(config.workerUrl + "/api/health");
