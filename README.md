@@ -9,23 +9,29 @@ Plugin gratuito que importa designs do Figma para o Roblox Studio, feito por
 
 **1. Instale o plugin do Studio** — clique em "Install" no [meu perfil de criador](https://create.roblox.com/store/user/4024894937).
 
-**2. Baixe este projeto** — botão verde **Code → Download ZIP** no topo desta
-página. Extraia numa pasta sua (por exemplo, `Documentos\FigmaToRoblox`).
+**2. Abra o PowerShell** (tecla Windows, digite `PowerShell`) e cole esta linha:
 
-**3. Dê dois cliques no `INSTALAR.bat`** dentro da pasta.
+```powershell
+irm https://raw.githubusercontent.com/KabytGray/FigmaToRoblox/main/instalar.ps1 | iex
+```
 
-Ele faz o resto: instala o Node.js se faltar, cria a conta na Cloudflare, publica
-o Worker, pede a API Key do Roblox e explica onde criar (com os escopos certos),
-e instala tudo. No fim mostra a URL do Worker para colar no plugin.
+Ele faz o resto: baixa o projeto em `Documentos\FigmaToRoblox`, instala o Node.js
+se faltar, cria a conta na Cloudflare, publica o Worker, pede a API Key do Roblox
+e explica onde criar (com os escopos certos), e instala os plugins. No fim mostra
+a URL do Worker para colar no plugin.
 
-**4. Reinicie o Roblox Studio.** O plugin **FigmaToRoblox** aparece na barra de
+> Se preferir baixar na mão: **Code → Download ZIP**, extraia, e dê **dois
+> cliques** no `INSTALAR.bat`. Não copie o conteúdo do `.bat` para o PowerShell —
+> são linguagens diferentes, e dá erro em `@echo off`.
+
+**3. Reinicie o Roblox Studio.** O plugin **FigmaToRoblox** aparece na barra de
 plugins. Abra a aba **Config**, cole a URL no campo do servidor, e o checklist
 do topo se acende sozinho.
 
-**5. No Figma:** `Plugins → Development → Import plugin from manifest…` e
+**4. No Figma:** `Plugins → Development → Import plugin from manifest…` e
 selecione `figma-plugin/manifest.json` desta pasta.
 
-**6. Deixe o `start-uploader.bat` aberto** enquanto trabalha. É ele que sobe as
+**5. Deixe o `start-uploader.bat` aberto** enquanto trabalha. É ele que sobe as
 imagens exportadas — sem ele, a fila enche e o Studio não consegue exibir.
 
 ---

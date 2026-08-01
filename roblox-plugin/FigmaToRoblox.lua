@@ -78,8 +78,18 @@ local PROJECT_ZIP_URL = PROJECT_REPO_URL .. "/archive/refs/heads/main.zip"
 local DONATE_URL = "https://www.roblox.com/users/4024894937/profile"
 local REVIEW_EVERY = 5 -- pede avaliacao a cada N importacoes bem-sucedidas
 
+-- Instalacao inteira em uma linha: baixa o projeto, extrai e roda o setup.
+-- Existe porque a reacao natural de quem le "rode o INSTALAR.bat" e colar o
+-- CONTEUDO do .bat no PowerShell — que quebra em "@echo off". Colar isto aqui
+-- funciona, que e o que a pessoa ja estava tentando fazer.
+local INSTALL_CMD =
+	"irm https://raw.githubusercontent.com/KabytGray/FigmaToRoblox/main/instalar.ps1 | iex"
+
 -- String longa: barras invertidas ficam literais, sem escape.
-local DEFAULT_CMD = [[node "C:\Users\josia\Documents\FigmaToRoblox\uploader.js"]]
+-- $env:USERPROFILE e a forma do PowerShell (nao %USERPROFILE%, que so o cmd
+-- expande) — e e no PowerShell que a dica manda colar. O instalador sempre
+-- extrai em Documentos\FigmaToRoblox, entao o caminho vale para qualquer PC.
+local DEFAULT_CMD = [[node "$env:USERPROFILE\Documents\FigmaToRoblox\uploader.js"]]
 local DEFAULT_HINT = "Clique no campo, Ctrl+A, Ctrl+C e cole no PowerShell.\nDeixe a janela aberta enquanto trabalha."
 
 -- ============================================================================
@@ -3138,19 +3148,25 @@ local function buildOnboarding()
 		return entry
 	end
 
-	-- Passo 0 — baixar o projeto. Sem isso os outros passos nao tem como acontecer.
+	-- Passo 0 — instalar. Antes eram dois passos (baixar o ZIP, depois achar e
+	-- rodar o .bat); virou um so porque cada passo a mais e uma chance a mais de
+	-- travar. O botao copia o comando: nao ha o que digitar errado.
 	local stepFiles = stepRow(1,
-		"Baixar os arquivos",
-		"O plugin sozinho nao sobe imagem: precisa do INSTALAR.bat, do uploader e do Worker. " ..
-		"Baixe o ZIP e extraia numa pasta sua (Documentos serve).",
-		"baixar",
-		function() openUrl(PROJECT_ZIP_URL) end)
+		"Instalar (uma linha)",
+		"Abra o PowerShell (tecla Windows, digite PowerShell) e cole o comando. " ..
+		"Ele baixa tudo, publica o seu Worker e instala sozinho.",
+		"copiar",
+		function()
+			cmdBox.Text = INSTALL_CMD
+			cmdBox:CaptureFocus()
+			cmdBox.SelectionStart = 1
+			cmdBox.CursorPosition = #cmdBox.Text + 1
+		end)
 
 	-- Passo 1 — o servidor. E o unico que da para checar de dentro do Studio.
 	local stepWorker = stepRow(2,
 		"Servidor publicado",
-		"Rode INSTALAR.bat na pasta que voce extraiu. Ele instala o Node, faz login " ..
-		"na Cloudflare, publica o Worker e devolve a URL.",
+		"Assim que o comando acima terminar, ele mostra a URL do seu Worker.",
 		"verificar",
 		function() end)
 
@@ -3195,8 +3211,8 @@ local function buildOnboarding()
 			end
 			-- Se o Worker responde, o projeto obviamente foi baixado.
 			stepFiles.setDone(okWorker,
-				okWorker and "Projeto no lugar."
-				or "Baixe o ZIP e extraia. Ele traz INSTALAR.bat, uploader e Worker.")
+				okWorker and "Projeto instalado."
+				or "Abra o PowerShell e cole o comando. Ele faz o resto sozinho.")
 
 			stepWorker.setDone(okWorker,
 				okWorker and "Servidor respondendo." or
@@ -3224,6 +3240,9 @@ local function buildOnboarding()
 	stepWorker.button.MouseButton1Click:Connect(refresh)
 	stepUrl.button.MouseButton1Click:Connect(refresh)
 	stepUploader.button.MouseButton1Click:Connect(function()
+		-- Devolve o comando do uploader: o Passo 1 pode ter deixado o de instalacao
+		-- no campo, e copiar aquilo de novo so reinstalaria o projeto.
+		cmdBox.Text = Plugin:GetSetting("uploaderCmd") or DEFAULT_CMD
 		cmdBox:CaptureFocus()
 		cmdBox.SelectionStart = 1
 		cmdBox.CursorPosition = #cmdBox.Text + 1
@@ -4040,6 +4059,10 @@ urlInput.FocusLost:Connect(function()
 end)
 
 cmdBox.FocusLost:Connect(function()
+	-- O Passo 1 empresta este campo para oferecer o comando de instalacao. Salvar
+	-- aquilo como "comando do uploader" deixaria o campo errado para sempre, e a
+	-- pessoa reinstalaria o projeto toda vez que fosse subir imagem.
+	if cmdBox.Text:sub(1, 4) == "irm " then return end
 	Plugin:SetSetting("uploaderCmd", cmdBox.Text)
 end)
 
