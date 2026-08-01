@@ -316,8 +316,8 @@ Write-Host "  Falta so isto:" -ForegroundColor White
 Write-Host ""
 Write-Host "   1. Reinicie o Roblox Studio (o plugin aparece na barra de plugins)"
 Write-Host "   2. Na aba Config do plugin, cole a URL acima"
-Write-Host "   3. No Figma: Plugins > Development > Import plugin from manifest"
-Write-Host "      escolha:  $root\figma-plugin\manifest.json"
+Write-Host "   3. No Figma: instale o plugin FigmaToRoblox pela pagina da"
+Write-Host "      comunidade e cole a mesma URL na configuracao dele"
 Write-Host ""
 Write-Host "  Daqui para frente, para usar o plugin basta abrir o atalho" -ForegroundColor DarkGray
 Write-Host "  'FigmaToRoblox uploader' na area de trabalho. Nao precisa" -ForegroundColor DarkGray

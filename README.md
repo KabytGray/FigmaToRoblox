@@ -28,8 +28,8 @@ a URL do Worker para colar no plugin.
 plugins. Abra a aba **Config**, cole a URL no campo do servidor, e o checklist
 do topo se acende sozinho.
 
-**4. No Figma:** `Plugins → Development → Import plugin from manifest…` e
-selecione `figma-plugin/manifest.json` desta pasta.
+**4. No Figma:** instale o plugin **FigmaToRoblox** pela página da comunidade e
+cole a mesma URL do servidor na aba de configuração dele.
 
 **5. Deixe o `start-uploader.bat` aberto** enquanto trabalha. É ele que sobe as
 imagens exportadas — sem ele, a fila enche e o Studio não consegue exibir.

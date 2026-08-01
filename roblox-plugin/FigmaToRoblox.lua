@@ -54,7 +54,12 @@ local function classIcon(className)
 end
 
 local SCHEMA_VERSION = 2
-local DEFAULT_URL = "https://figma-to-roblox-worker.kabytgray.workers.dev"
+
+-- Vazio de proposito. Ja teve o servidor do autor aqui, e isso significava que
+-- qualquer pessoa que instalasse o plugin mandava os proprios designs para a
+-- conta dele: cota, custo e conteudo alheio no lugar errado. Sem padrao, quem
+-- nao configurou ve um aviso claro em vez de "funcionar" no servidor errado.
+local DEFAULT_URL = ""
 local SYNC_INTERVAL = 3
 
 -- ---------------------------------------------------------------------------
@@ -3191,7 +3196,7 @@ local function buildOnboarding()
 	-- Passo 4 — o plugin do Figma.
 	local stepFigma = stepRow(5,
 		"Plugin do Figma",
-		"Instale pelo link da comunidade, ou importe o manifest.json em Development.",
+		"Abra o plugin do Figma pela pagina da comunidade e deixe instalado.",
 		"abrir",
 		function() openUrl(FIGMA_PLUGIN_URL) end)
 
@@ -3928,6 +3933,15 @@ local lastAutoGui = nil
 
 local function doImport(exportId, useSelection)
 	if busy then return end
+
+	-- Sem servidor configurado nao ha o que tentar. Dizer isso aqui evita um
+	-- "falha ao importar" generico, que manda a pessoa procurar problema no
+	-- design quando o que falta e o Passo 1 do checklist.
+	if baseUrl() == "" then
+		setStatus("Configure o servidor na aba Config (Passo 1).", "err")
+		return
+	end
+
 	exportId = (exportId or ""):gsub("%s+", ""):gsub("[^%w%-_]", "")
 	if exportId == "" then
 		setStatus("Informe o ID do export.", "err")

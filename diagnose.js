@@ -21,11 +21,17 @@ function workerUrl() {
   const configPath = path.join(__dirname, "config.json");
   if (fs.existsSync(configPath)) {
     try {
-      const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
+      // Sem o BOM: o Set-Content do PowerShell 5.1 grava UTF-8 com marca, e o
+      // JSON.parse quebra no primeiro caractere.
+      const bruto = fs.readFileSync(configPath, "utf8").replace(/^﻿/, "");
+      const cfg = JSON.parse(bruto);
       if (cfg.workerUrl) return cfg.workerUrl.replace(/\/+$/, "");
-    } catch (e) { /* cai no padrao */ }
+    } catch (e) { /* cai no aviso abaixo */ }
   }
-  return "https://figma-to-roblox-worker.kabytgray.workers.dev";
+  // Sem padrao de proposito: ja teve o servidor do autor aqui, e diagnosticar
+  // contra o servidor de outra pessoa nao diz nada sobre a instalacao local.
+  console.error("\n  Nao achei config.json. Rode a instalacao antes.\n");
+  process.exit(1);
 }
 
 const BASE = workerUrl();
