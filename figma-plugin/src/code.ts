@@ -1236,8 +1236,14 @@ figma.ui.onmessage = async (msg: any) => {
       const alvo = normUrl(msg.workerUrl);
       const estado = await checarServidor(alvo);
       if (estado === "off") {
-        post("error", { message: "Nao consegui falar com " + alvo +
-          ". Confira a URL e se o servidor esta publicado." });
+        // Um Worker vazio da Cloudflare tambem cai aqui: ele responde, mas sem
+        // os cabecalhos CORS o navegador bloqueia antes de entregar a resposta,
+        // entao de dentro do plugin isso e indistinguivel de servidor fora do
+        // ar. Citar as duas causas evita a busca no lugar errado.
+        post("error", { message: "Nao consegui falar com " + alvo + ". " +
+          "Ou a URL esta errada, ou esse endereco e um Worker vazio da " +
+          "Cloudflare (sem o codigo do FigmaToRoblox). Use a URL que o " +
+          "instalador mostrou no fim." });
         return;
       }
       if (estado === "vazio") {
