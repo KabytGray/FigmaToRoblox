@@ -1202,6 +1202,30 @@ figma.ui.onmessage = async (msg: any) => {
 
     if (msg.type === "export") {
       if (!msg.workerUrl) { post("error", { message: "Configure a URL do servidor." }); return; }
+
+      // Confere ANTES de exportar que o endereco e mesmo o servidor deste
+      // projeto. Um worker recem-criado no painel da Cloudflare responde
+      // "Hello World!" em qualquer rota: parece ligado, mas nao tem nenhuma
+      // rota nossa. Sem esta checagem o erro so aparece depois, disfarcado de
+      // problema de rede, e manda a pessoa procurar defeito no lugar errado.
+      const alvo = normUrl(msg.workerUrl);
+      let saudavel = false;
+      try {
+        const r = await fetch(alvo + "/api/health");
+        const t = await r.text();
+        saudavel = t.indexOf("\"status\"") >= 0 && t.indexOf("\"ok\"") >= 0;
+      } catch (e) {
+        post("error", { message: "Nao consegui falar com " + alvo +
+          ". Confira a URL e se o servidor esta publicado." });
+        return;
+      }
+      if (!saudavel) {
+        post("error", { message: alvo + " responde, mas nao e o servidor do " +
+          "FigmaToRoblox. Parece um Worker vazio da Cloudflare - publique o " +
+          "projeto nele, ou use a URL que o instalador mostrou." });
+        return;
+      }
+
       await runExport(msg.workerUrl, msg.token || "", msg.scale || 2,
         msg.rasterize !== false, msg.constraints === true);
       return;
