@@ -317,9 +317,47 @@ async function drainQueue(config) {
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
+// Porta fixa e alta, escolhida para nao colidir com nada comum. O plugin do
+// Studio procura exatamente aqui.
+const PORTA_LOCAL = 34567;
+
+/**
+ * Anuncia a URL do servidor num endereco local, para o plugin do Roblox se
+ * configurar sozinho.
+ *
+ * Existe porque a pessoa tinha que colar a mesma URL em DOIS lugares (Figma e
+ * Studio), e errar um deles gerava um erro que parecia bug do plugin. O
+ * uploader ja precisa estar aberto para as imagens subirem, entao ele e o
+ * unico ponto que sabe a configuracao certa e esta sempre rodando.
+ *
+ * So escuta em 127.0.0.1: nada disto fica exposto na rede.
+ */
+function anunciarLocalmente(config) {
+  let servidor;
+  try {
+    servidor = require("http").createServer((req, res) => {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({
+        workerUrl: config.workerUrl,
+        userId: config.userId,
+        source: "FigmaToRoblox-uploader"
+      }));
+    });
+  } catch (e) {
+    return; // sem http disponivel: o resto do uploader continua funcionando
+  }
+
+  servidor.on("error", () => {
+    // Porta ocupada (outro uploader aberto) nao e motivo para abortar o upload.
+  });
+  servidor.listen(PORTA_LOCAL, "127.0.0.1");
+}
+
 async function main() {
   const config = loadConfig();
   const once = process.argv.includes("--once");
+  if (!once) anunciarLocalmente(config);
 
   console.log("");
   console.log(C.magenta + C.bold + "  FigmaToRoblox " + C.reset + C.dim + "uploader" + C.reset);

@@ -111,8 +111,11 @@ local T = {
 	raised   = Color3.fromRGB(33, 33, 36),
 	hover    = Color3.fromRGB(41, 42, 45),
 	active   = Color3.fromRGB(49, 50, 54),
-	line     = Color3.fromRGB(47, 48, 51),
-	line2    = Color3.fromRGB(60, 61, 66),
+	-- Quase invisiveis de proposito. Divisorias cinzas visiveis entre cada linha
+	-- sao o que fazia o painel parecer uma planilha: separacao aqui vem de
+	-- espacamento e de blocos arredondados, nao de tracos.
+	line     = Color3.fromRGB(34, 34, 37),
+	line2    = Color3.fromRGB(46, 47, 51),
 
 	txt      = Color3.fromRGB(232, 232, 234),
 	dim      = Color3.fromRGB(154, 154, 162),
@@ -1325,7 +1328,7 @@ local root = mk("Frame", {
 }, widget)
 
 local HEADER_H = 40
-local TABS_H = 28
+local TABS_H = 34 -- pilulas precisam de mais folga que rotulos soltos
 local STATUS_H = 22
 local GUTTER = 12
 local ROW_H = 28
@@ -1525,22 +1528,24 @@ task.spawn(function()
 end)
 
 -- -------------------------------------------------------------------- abas
+-- Pilulas com icone, sem sublinhado e sem fio embaixo: a aba ativa se distingue
+-- pelo proprio fundo arredondado, que e mais legivel que um traco de 2px e nao
+-- deixa a barra com cara de tabela.
 local tabBar = mk("Frame", {
 	Size = UDim2.new(1, 0, 0, TABS_H),
 	Position = UDim2.fromOffset(0, HEADER_H),
-	BackgroundColor3 = T.raised,
+	BackgroundColor3 = T.bg,
 	BorderSizePixel = 0,
 }, root)
-hairline(tabBar, true)
-
---- Sublinhado de 2px na aba ativa: e o unico lugar, fora da acao primaria, em
---- que o azul aparece.
-local tabInk = mk("Frame", {
-	Size = UDim2.new(0.25, 0, 0, 2),
-	Position = UDim2.new(0, 0, 1, -2),
-	BackgroundColor3 = T.accent,
-	BorderSizePixel = 0,
-	ZIndex = 3,
+mk("UIPadding", {
+	PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6),
+	PaddingTop = UDim.new(0, 3), PaddingBottom = UDim.new(0, 4),
+}, tabBar)
+mk("UIListLayout", {
+	FillDirection = Enum.FillDirection.Horizontal,
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	Padding = UDim.new(0, 3),
+	VerticalAlignment = Enum.VerticalAlignment.Center,
 }, tabBar)
 
 local pagesHolder = mk("Frame", {
@@ -1551,11 +1556,11 @@ local pagesHolder = mk("Frame", {
 }, root)
 
 local TAB_DEFS = {
-	{ id = "import", label = "Importar" },
-	{ id = "pre", label = "Scripts" },
-	{ id = "adjust", label = "Ajustes" },
-	{ id = "exports", label = "Exports" },
-	{ id = "config", label = "Config" },
+	{ id = "import",  label = "Importar", icon = "rbxassetid://9405930424" },
+	{ id = "pre",     label = "Scripts",  icon = "rbxassetid://9405930424" },
+	{ id = "adjust",  label = "Ajustes",  icon = "rbxassetid://13300915301" },
+	{ id = "exports", label = "Exports",  icon = "rbxassetid://92120094205063" },
+	{ id = "config",  label = "Config",   icon = "rbxassetid://87350324375899" },
 }
 
 local pages, tabButtons, activeTab = {}, {}, nil
@@ -1582,6 +1587,9 @@ end
 
 for _, def in ipairs(TAB_DEFS) do makePage(def.id) end
 
+-- Guarda as partes de cada pilula para pintar sem procurar filhos na hora.
+local tabParts = {}
+
 local function selectTab(index)
 	if activeTab == index then return end
 	activeTab = index
@@ -1589,36 +1597,81 @@ local function selectTab(index)
 	for position, def in ipairs(TAB_DEFS) do
 		local on = position == index
 		pages[def.id].frame.Visible = on
-		tabButtons[position].TextColor3 = on and T.txt or T.faint
-		tabButtons[position].Font = on and Enum.Font.GothamMedium or Enum.Font.Gotham
-	end
 
-	local w = 1 / #TAB_DEFS
-	TweenService:Create(tabInk, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Position = UDim2.new(w * (index - 1), 0, 1, -2),
-	}):Play()
+		local part = tabParts[position]
+		TweenService:Create(part.pill, TweenInfo.new(0.14, Enum.EasingStyle.Quad), {
+			BackgroundColor3 = on and T.accent or T.raised,
+			BackgroundTransparency = on and 0 or 1,
+		}):Play()
+		TweenService:Create(part.label, TweenInfo.new(0.14), {
+			TextColor3 = on and T.onAccent or T.faint,
+		}):Play()
+		TweenService:Create(part.icon, TweenInfo.new(0.14), {
+			ImageColor3 = on and T.onAccent or T.faint,
+		}):Play()
+		part.label.Font = on and Enum.Font.GothamMedium or Enum.Font.Gotham
+	end
 end
 
 for position, def in ipairs(TAB_DEFS) do
-	local w = 1 / #TAB_DEFS
-	local button = mk("TextButton", {
-		Size = UDim2.new(w, 0, 1, -1),
-		Position = UDim2.new(w * (position - 1), 0, 0, 0),
+	-- Divide o espaco igualmente; a pilula ocupa a celula inteira menos o gap.
+	local pill = mk("TextButton", {
+		Size = UDim2.new(1 / #TAB_DEFS, -3, 1, 0),
+		BackgroundColor3 = T.raised,
+		BackgroundTransparency = 1,
+		Text = "",
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		LayoutOrder = position,
+	}, tabBar)
+	round(pill, 999) -- raio alto = pilula, independente da altura
+
+	-- Icone e rotulo entram juntos e centralizados: com 5 abas num painel
+	-- estreito, alinhar a esquerda deixaria o conjunto torto.
+	mk("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 4),
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+	}, pill)
+
+	local icon = mk("ImageLabel", {
+		Size = UDim2.fromOffset(12, 12),
+		BackgroundTransparency = 1,
+		Image = def.icon,
+		ImageColor3 = T.faint,
+		ScaleType = Enum.ScaleType.Fit,
+		LayoutOrder = 1,
+	}, pill)
+
+	local label = mk("TextLabel", {
+		Size = UDim2.fromOffset(0, 14),
+		AutomaticSize = Enum.AutomaticSize.X,
 		BackgroundTransparency = 1,
 		Text = def.label,
 		TextColor3 = T.faint,
-		TextSize = 11,
+		TextSize = 10,
 		Font = Enum.Font.Gotham,
-		AutoButtonColor = false,
-	}, tabBar)
+		LayoutOrder = 2,
+	}, pill)
 
-	tabButtons[position] = button
-	button.MouseButton1Click:Connect(function() selectTab(position) end)
-	button.MouseEnter:Connect(function()
-		if activeTab ~= position then button.TextColor3 = T.dim end
+	tabParts[position] = { pill = pill, icon = icon, label = label }
+	tabButtons[position] = pill
+
+	pill.MouseButton1Click:Connect(function() selectTab(position) end)
+	pill.MouseEnter:Connect(function()
+		if activeTab == position then return end
+		pill.BackgroundTransparency = 0
+		pill.BackgroundColor3 = T.hover
+		label.TextColor3 = T.dim
+		icon.ImageColor3 = T.dim
 	end)
-	button.MouseLeave:Connect(function()
-		if activeTab ~= position then button.TextColor3 = T.faint end
+	pill.MouseLeave:Connect(function()
+		if activeTab == position then return end
+		pill.BackgroundTransparency = 1
+		label.TextColor3 = T.faint
+		icon.ImageColor3 = T.faint
 	end)
 end
 
@@ -4074,6 +4127,34 @@ end)
 
 urlInput.FocusLost:Connect(function()
 	Plugin:SetSetting("workerUrl", trimUrl(urlInput.Text))
+end)
+
+-- ------------------------------------------------- descoberta automatica ----
+-- O uploader roda na maquina e ja sabe a URL do servidor. Em vez de exigir que
+-- a pessoa cole a mesma coisa aqui e no Figma (errar um dos dois produzia um
+-- erro que parecia bug do plugin), perguntamos a ele.
+--
+-- So preenche quando o campo esta vazio: uma URL digitada a mao nunca e
+-- sobrescrita.
+task.spawn(function()
+	if trimUrl(urlInput.Text) ~= "" then return end
+
+	local ok, resposta = pcall(function()
+		return HttpService:RequestAsync({
+			Url = "http://127.0.0.1:34567/",
+			Method = "GET",
+		})
+	end)
+	if not ok or not resposta or not resposta.Success then return end
+
+	local lido, dados = pcall(function() return HttpService:JSONDecode(resposta.Body) end)
+	if not lido or type(dados) ~= "table" then return end
+	if dados.source ~= "FigmaToRoblox-uploader" then return end
+	if type(dados.workerUrl) ~= "string" or dados.workerUrl == "" then return end
+
+	urlInput.Text = dados.workerUrl
+	Plugin:SetSetting("workerUrl", trimUrl(dados.workerUrl))
+	setStatus("Servidor detectado pelo uploader.", "ok")
 end)
 
 cmdBox.FocusLost:Connect(function()
