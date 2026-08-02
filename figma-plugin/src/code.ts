@@ -1083,6 +1083,27 @@ function normUrl(raw: string): string {
   return url;
 }
 
+/**
+ * Diz se o endereco e mesmo um servidor deste projeto.
+ *
+ * Um Worker recem-criado no painel da Cloudflare responde "Hello World!" em
+ * qualquer rota: parece ligado, mas nao tem nenhuma das nossas. So verificar se
+ * a resposta chega nao basta — e preciso ver o que ela diz.
+ *
+ * Devolve "ok", "vazio" (respondeu, mas nao e o nosso) ou "off" (nao respondeu).
+ */
+async function checarServidor(raw: string): Promise<"ok" | "vazio" | "off"> {
+  const alvo = normUrl(raw);
+  if (!alvo) return "off";
+  try {
+    const r = await fetch(alvo + "/api/health");
+    const t = await r.text();
+    return (t.indexOf("\"status\"") >= 0 && t.indexOf("\"ok\"") >= 0) ? "ok" : "vazio";
+  } catch (e) {
+    return "off";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Biblioteca de projetos — o plugin faz de ponte porque o iframe da UI nao
 // alcanca a rede (CSP), mas o sandbox do plugin alcanca.
@@ -1195,6 +1216,12 @@ figma.ui.onmessage = async (msg: any) => {
       return;
     }
 
+    if (msg.type === "check-server") {
+      const estado = await checarServidor(msg.workerUrl || "");
+      post("server-status", { ok: estado === "ok", reason: estado });
+      return;
+    }
+
     if (msg.type === "analyze") {
       await analyze(msg.scale || 2, msg.rasterize !== false, msg.constraints === true);
       return;
@@ -1203,23 +1230,17 @@ figma.ui.onmessage = async (msg: any) => {
     if (msg.type === "export") {
       if (!msg.workerUrl) { post("error", { message: "Configure a URL do servidor." }); return; }
 
-      // Confere ANTES de exportar que o endereco e mesmo o servidor deste
-      // projeto. Um worker recem-criado no painel da Cloudflare responde
-      // "Hello World!" em qualquer rota: parece ligado, mas nao tem nenhuma
-      // rota nossa. Sem esta checagem o erro so aparece depois, disfarcado de
-      // problema de rede, e manda a pessoa procurar defeito no lugar errado.
+      // Confere ANTES de exportar. Sem isto o erro so aparece la na frente,
+      // disfarcado de problema de rede, e manda a pessoa procurar defeito no
+      // design quando o que esta errado e o endereco.
       const alvo = normUrl(msg.workerUrl);
-      let saudavel = false;
-      try {
-        const r = await fetch(alvo + "/api/health");
-        const t = await r.text();
-        saudavel = t.indexOf("\"status\"") >= 0 && t.indexOf("\"ok\"") >= 0;
-      } catch (e) {
+      const estado = await checarServidor(alvo);
+      if (estado === "off") {
         post("error", { message: "Nao consegui falar com " + alvo +
           ". Confira a URL e se o servidor esta publicado." });
         return;
       }
-      if (!saudavel) {
+      if (estado === "vazio") {
         post("error", { message: alvo + " responde, mas nao e o servidor do " +
           "FigmaToRoblox. Parece um Worker vazio da Cloudflare - publique o " +
           "projeto nele, ou use a URL que o instalador mostrou." });

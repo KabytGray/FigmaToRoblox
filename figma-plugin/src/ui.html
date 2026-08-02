@@ -425,6 +425,21 @@
   .status.err .dot{background:var(--err)} .status.err .msg{color:var(--err)}
   .status .msg{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .status .pct{font-variant-numeric:tabular-nums}
+
+  /* Estado do servidor, logo abaixo do campo da URL. */
+  .srvline{
+    display:flex;align-items:center;gap:6px;
+    padding:5px var(--gut) 0;font-size:10px;color:var(--t3);
+  }
+  .srvline .dot{
+    width:5px;height:5px;border-radius:50%;background:var(--t3);flex-shrink:0;
+    transition:background .15s;
+  }
+  .srvline span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .srvline.ok  .dot{background:var(--ok)}   .srvline.ok  span{color:var(--ok)}
+  .srvline.err .dot{background:var(--err)}  .srvline.err span{color:var(--err)}
+  .srvline.wait .dot{background:var(--warn);animation:pulse 1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 </style>
 </head>
 <body>
@@ -632,6 +647,10 @@
              numero e extraido na hora de salvar. -->
         <input type="text" id="robloxUser" placeholder="Seu ID do Roblox (ou link do perfil)" spellcheck="false">
       </div>
+      <!-- Estado do servidor, verificado assim que a URL muda. Trocar de
+           servidor passa a ser: colar e olhar a bolinha - sem exportar para
+           descobrir que estava errado. -->
+      <div class="srvline" id="srvLine"><i class="dot"></i><span id="srvText">Cole a URL do seu servidor</span></div>
       <div id="settings" style="display:none"></div>
 
       <div class="analysis" id="analysis"></div>
@@ -1218,7 +1237,30 @@
   }
 
   $("scanBtn").addEventListener("click", function(){ send({ type:"scan" }); });
-  $("workerUrl").addEventListener("change", save);
+  // ------------------------------------------------------- estado do servidor
+  // Trocar de servidor tem que ser: colar e ver a bolinha ficar verde. Sem isso
+  // a pessoa so descobre que errou o endereco na hora de exportar.
+  function pintaServidor(estado, texto){
+    var linha = $("srvLine");
+    linha.className = "srvline" + (estado ? " " + estado : "");
+    $("srvText").textContent = texto;
+  }
+
+  var checagemPendente = null;
+  function checarServidor(){
+    var url = $("workerUrl").value.trim();
+    if (checagemPendente) { clearTimeout(checagemPendente); checagemPendente = null; }
+    if (!url) { pintaServidor("", "Cole a URL do seu servidor"); return; }
+
+    pintaServidor("wait", "Verificando...");
+    // Espera a pessoa parar de digitar antes de bater no servidor.
+    checagemPendente = setTimeout(function(){
+      send({ type:"check-server", workerUrl:url });
+    }, 350);
+  }
+
+  $("workerUrl").addEventListener("change", function(){ save(); checarServidor(); });
+  $("workerUrl").addEventListener("input", checarServidor);
   $("token").addEventListener("change", save);
   $("cmdText").addEventListener("change", save);
   $("robloxUser").addEventListener("change", save);
@@ -1258,6 +1300,7 @@
       $("token").value = m.token || "";
       $("cmdText").value = m.uploaderCmd || DEFAULT_CMD;
       $("robloxUser").value = m.robloxUserId || "";
+      checarServidor();
       st.scale = m.scale || 2;
       st.rasterize = m.rasterize !== false;
       st.constraints = m.constraints === true;
@@ -1270,6 +1313,13 @@
       st.accent = m.accent || "blue";
       applyTheme(m.theme || "dark");
       refreshProjects();
+    }
+
+    if (m.type === "server-status"){
+      if (m.ok) pintaServidor("ok", "Servidor conectado");
+      else if (m.reason === "vazio") pintaServidor("err", "Responde, mas nao e o servidor do FigmaToRoblox");
+      else pintaServidor("err", "Nao consegui conectar");
+      return;
     }
 
     if (m.type === "sections"){
