@@ -7,7 +7,6 @@
   "capabilities": [],
   "enableProposedApi": false,
   "editorType": ["figma"],
-  "documentAccess": "dynamic-page",
   "networkAccess": {
     "allowedDomains": ["*"],
     "reasoning": "The plugin uploads the exported design to a server the user deploys and owns, and whose address the user types into the plugin. There is no fixed domain to declare: a Cloudflare Worker lives at <worker>.<account>.workers.dev, and users may point the plugin at a custom domain or a self-hosted server instead. The plugin never contacts any address other than the one the user configured."
