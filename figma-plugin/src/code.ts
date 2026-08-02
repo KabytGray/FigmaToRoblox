@@ -895,7 +895,7 @@ async function runExport(workerUrl: string, token: string, scale: number, raster
 
   post("progress", { message: "Enviando para o servidor...", pct: 75 });
 
-  const base = workerUrl.replace(/\/+$/, "");
+  const base = normUrl(workerUrl);
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = "Bearer " + token;
 
@@ -1069,6 +1069,20 @@ async function buildPreview(scale: number, rasterize: boolean) {
   });
 }
 
+/**
+ * Deixa a URL do servidor num formato que o fetch aceita.
+ *
+ * Sem isto, colar "meu-worker.workers.dev" (sem https://) ou com um espaco
+ * junto produzia um "Failed to fetch" seco, sem dizer o que estava errado — o
+ * fetch trata endereco sem protocolo como caminho relativo e falha.
+ */
+function normUrl(raw: string): string {
+  let url = String(raw || "").trim().replace(/\/+$/, "");
+  if (!url) return "";
+  if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+  return url;
+}
+
 // ---------------------------------------------------------------------------
 // Biblioteca de projetos — o plugin faz de ponte porque o iframe da UI nao
 // alcanca a rede (CSP), mas o sandbox do plugin alcanca.
@@ -1078,7 +1092,7 @@ async function api(workerUrl: string, route: string, method: string, body?: any,
   if (body) headers["Content-Type"] = "application/json";
   if (token) headers["Authorization"] = "Bearer " + token;
 
-  const resp = await fetch(workerUrl.replace(/\/+$/, "") + route, {
+  const resp = await fetch(normUrl(workerUrl) + route, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined
@@ -1233,7 +1247,7 @@ figma.ui.onmessage = async (msg: any) => {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (msg.token) headers["Authorization"] = "Bearer " + msg.token;
 
-      const resp = await fetch(msg.workerUrl.replace(/\/+$/, "") + "/api/upload", {
+      const resp = await fetch(normUrl(msg.workerUrl) + "/api/upload", {
         method: "POST",
         headers,
         body: JSON.stringify({ ...data.data, exportedAt: new Date().toISOString() })
@@ -1334,6 +1348,17 @@ figma.ui.onmessage = async (msg: any) => {
 
     if (msg.type === "close") figma.closePlugin();
   } catch (e: any) {
-    post("error", { message: e && e.message ? e.message : String(e) });
+    let texto = e && e.message ? e.message : String(e);
+
+    // "Failed to fetch" sozinho nao diz nada e manda a pessoa procurar defeito
+    // no design. Trocamos pelo que realmente costuma estar errado, junto do
+    // endereco que foi tentado.
+    if (/failed to fetch|networkerror|load failed/i.test(texto)) {
+      const alvo = normUrl((msg as any).workerUrl || "");
+      texto = "Nao consegui falar com o servidor" + (alvo ? " (" + alvo + ")" : "") +
+              ". Confira se a URL esta correta e se o servidor foi publicado.";
+    }
+
+    post("error", { message: texto });
   }
 };
