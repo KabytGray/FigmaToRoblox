@@ -1334,11 +1334,17 @@ local GUTTER = 12
 local ROW_H = 28
 
 --- Fio horizontal de 1px. Divisor e o que substitui caixa neste desenho.
+--- Divisoria entre linhas. Invisivel por padrao: um traco embaixo de CADA linha
+--- dava ao painel cara de planilha. A separacao agora vem dos cabecalhos de
+--- grupo e do espacamento.
+---
+--- Continua devolvendo um Frame real porque ha 20 chamadas espalhadas, algumas
+--- guardando o retorno; sumir com ele quebraria essas.
 local function hairline(parent, atBottom)
 	return mk("Frame", {
 		Size = UDim2.new(1, 0, 0, 1),
 		Position = atBottom and UDim2.new(0, 0, 1, -1) or UDim2.new(),
-		BackgroundColor3 = T.line,
+		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		ZIndex = 2,
 	}, parent)
@@ -1555,12 +1561,18 @@ local pagesHolder = mk("Frame", {
 	BorderSizePixel = 0,
 }, root)
 
+-- Icones vindos do proprio Studio (StudioService:GetClassIcon). E a unica fonte
+-- que nao pode quebrar: sao os icones que o Studio ja usa no Explorer, entao
+-- existem sempre e acompanham o tema. Um rbxassetid solto pode ser moderado,
+-- deletado ou simplesmente nao carregar, e o resultado e uma aba sem icone.
+--
+-- `fallback` cobre versoes de Studio em que a classe nao devolva icone.
 local TAB_DEFS = {
-	{ id = "import",  label = "Importar", icon = "rbxassetid://9405930424" },
-	{ id = "pre",     label = "Scripts",  icon = "rbxassetid://9405930424" },
-	{ id = "adjust",  label = "Ajustes",  icon = "rbxassetid://13300915301" },
-	{ id = "exports", label = "Exports",  icon = "rbxassetid://92120094205063" },
-	{ id = "config",  label = "Config",   icon = "rbxassetid://87350324375899" },
+	{ id = "import",  label = "Importar", cls = "ScreenGui",     fallback = "rbxassetid://9405930424" },
+	{ id = "pre",     label = "Scripts",  cls = "Script",        fallback = "rbxassetid://9405930424" },
+	{ id = "adjust",  label = "Ajustes",  cls = "UIScale",       fallback = "rbxassetid://13300915301" },
+	{ id = "exports", label = "Exports",  cls = "Folder",        fallback = "rbxassetid://92120094205063" },
+	{ id = "config",  label = "Config",   cls = "Configuration", fallback = "rbxassetid://87350324375899" },
 }
 
 local pages, tabButtons, activeTab = {}, {}, nil
@@ -1607,7 +1619,7 @@ local function selectTab(index)
 			TextColor3 = on and T.onAccent or T.faint,
 		}):Play()
 		TweenService:Create(part.icon, TweenInfo.new(0.14), {
-			ImageColor3 = on and T.onAccent or T.faint,
+			ImageTransparency = on and 0 or 0.45,
 		}):Play()
 		part.label.Font = on and Enum.Font.GothamMedium or Enum.Font.Gotham
 	end
@@ -1636,11 +1648,19 @@ for position, def in ipairs(TAB_DEFS) do
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 	}, pill)
 
+	-- Icone do Studio vem como sprite (imagem + recorte). Quando existe, usamos
+	-- o recorte; se nao, cai no asset avulso.
+	local arte = classIcon(def.cls)
 	local icon = mk("ImageLabel", {
-		Size = UDim2.fromOffset(12, 12),
+		Size = UDim2.fromOffset(13, 13),
 		BackgroundTransparency = 1,
-		Image = def.icon,
-		ImageColor3 = T.faint,
+		Image = arte and arte.Image or def.fallback,
+		ImageRectOffset = arte and arte.RectOffset or Vector2.new(),
+		ImageRectSize = arte and arte.RectSize or Vector2.new(),
+		-- SEM tingir: os icones do Studio sao coloridos, e ImageColor3 multiplica
+		-- a cor original — cinza sobre azul da um azul sujo, nao um cinza. O
+		-- estado inativo vem de transparencia, que preserva a cor.
+		ImageTransparency = 0.45,
 		ScaleType = Enum.ScaleType.Fit,
 		LayoutOrder = 1,
 	}, pill)
@@ -1665,13 +1685,13 @@ for position, def in ipairs(TAB_DEFS) do
 		pill.BackgroundTransparency = 0
 		pill.BackgroundColor3 = T.hover
 		label.TextColor3 = T.dim
-		icon.ImageColor3 = T.dim
+		icon.ImageTransparency = 0.15
 	end)
 	pill.MouseLeave:Connect(function()
 		if activeTab == position then return end
 		pill.BackgroundTransparency = 1
 		label.TextColor3 = T.faint
-		icon.ImageColor3 = T.faint
+		icon.ImageTransparency = 0.45
 	end)
 end
 
@@ -1679,17 +1699,28 @@ end
 --- Cabecalho de grupo: 26px, texto discreto, fio embaixo. `trailing` mostra
 --- contagem a direita (ex: "2 ativos").
 local function groupHead(page, text)
+	-- Mais alto que antes: sem os fios embaixo das linhas, o respiro em volta do
+	-- titulo e o que separa uma secao da outra.
 	local frame = mk("Frame", {
-		Size = UDim2.new(1, 0, 0, 26),
+		Size = UDim2.new(1, 0, 0, 32),
 		BackgroundColor3 = T.bg,
 		BorderSizePixel = 0,
 		LayoutOrder = page.next(),
 	}, page.frame)
-	hairline(frame, true)
+
+	-- Barrinha de 2px no accent: ancora a secao visualmente sem atravessar o
+	-- painel inteiro, que era o que deixava tudo com cara de tabela.
+	local marca = mk("Frame", {
+		Size = UDim2.fromOffset(2, 10),
+		Position = UDim2.fromOffset(GUTTER, 11),
+		BackgroundColor3 = T.accent,
+		BorderSizePixel = 0,
+	}, frame)
+	round(marca, 1)
 
 	mk("TextLabel", {
 		Size = UDim2.new(1, -GUTTER * 2 - 70, 1, 0),
-		Position = UDim2.fromOffset(GUTTER, 0),
+		Position = UDim2.fromOffset(GUTTER + 8, 0),
 		BackgroundTransparency = 1,
 		Text = text,
 		TextColor3 = T.dim,
