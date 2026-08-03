@@ -4177,10 +4177,16 @@ end)
 -- a pessoa cole a mesma coisa aqui e no Figma (errar um dos dois produzia um
 -- erro que parecia bug do plugin), perguntamos a ele.
 --
--- So preenche quando o campo esta vazio: uma URL digitada a mao nunca e
--- sobrescrita.
+-- Nada aqui sobrescreve escolha da pessoa: a URL so e preenchida se estiver
+-- vazia, e o token so e aceito se for do mesmo servidor que o campo aponta.
 task.spawn(function()
-	if trimUrl(urlInput.Text) ~= "" then return end
+	-- Roda se faltar a URL OU o token. Antes so olhava a URL, e quem a tivesse
+	-- colado a mao nunca recebia o token — funcionava enquanto o plugin so lia
+	-- (rotas GET sao publicas), e quebraria no dia em que precisasse escrever.
+	local temUrl = trimUrl(urlInput.Text) ~= ""
+	local guardado = Plugin:GetSetting("authToken")
+	local temToken = type(guardado) == "string" and guardado ~= ""
+	if temUrl and temToken then return end
 
 	local ok, resposta = pcall(function()
 		return HttpService:RequestAsync({
@@ -4195,12 +4201,18 @@ task.spawn(function()
 	if dados.source ~= "FigmaToRoblox-uploader" then return end
 	if type(dados.workerUrl) ~= "string" or dados.workerUrl == "" then return end
 
-	urlInput.Text = dados.workerUrl
-	Plugin:SetSetting("workerUrl", trimUrl(dados.workerUrl))
+	-- So preenche a URL se estiver vazia: quem apontou o plugin para outro
+	-- servidor de proposito nao pode ver o campo mudar sozinho.
+	if not temUrl then
+		urlInput.Text = dados.workerUrl
+		Plugin:SetSetting("workerUrl", trimUrl(dados.workerUrl))
+	end
 
-	-- O token vem junto. Sem ele, um servidor protegido responderia 401 e a
-	-- pessoa veria "falha ao importar" sem pista do motivo.
-	if type(dados.authToken) == "string" and dados.authToken ~= "" then
+	-- O token so vale para o servidor que o uploader conhece. Se o campo aponta
+	-- para outro lugar, guardar este token mandaria a credencial errada — e, pior,
+	-- entregaria a credencial de um servidor a outro.
+	local mesmoServidor = (not temUrl) or trimUrl(urlInput.Text) == trimUrl(dados.workerUrl)
+	if mesmoServidor and type(dados.authToken) == "string" and dados.authToken ~= "" then
 		Plugin:SetSetting("authToken", dados.authToken)
 	end
 
