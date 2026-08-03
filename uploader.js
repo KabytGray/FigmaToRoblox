@@ -336,15 +336,28 @@ function anunciarLocalmente(config) {
   let servidor;
   try {
     servidor = require("http").createServer((req, res) => {
+      // Rele o config a cada consulta em vez de usar o que foi carregado no
+      // inicio. Quem deixa o uploader aberto e roda o instalador (o caso normal
+      // ao atualizar) teria um processo servindo dados velhos — foi exatamente
+      // assim que o token novo deixou de chegar aos plugins, e o sintoma foi um
+      // 401 em todo export, sem relacao aparente com o uploader.
+      let atual = config;
+      try {
+        const bruto = fs.readFileSync(path.join(HERE, "config.json"), "utf8").replace(/^﻿/, "");
+        atual = Object.assign({}, config, JSON.parse(bruto));
+      } catch (e) {
+        // Config ilegivel no momento da leitura: serve o que ja estava em memoria.
+      }
+
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Content-Type", "application/json");
       // O token vai junto de proposito: e o que permite aos plugins falarem
       // com o Worker sem a pessoa colar nada. So sai por 127.0.0.1, ou seja,
       // quem ja esta na maquina — que tambem poderia abrir o config.json.
       res.end(JSON.stringify({
-        workerUrl: config.workerUrl,
-        userId: config.userId,
-        authToken: config.authToken || "",
+        workerUrl: atual.workerUrl,
+        userId: atual.userId,
+        authToken: atual.authToken || "",
         source: "FigmaToRoblox-uploader"
       }));
     });
@@ -352,8 +365,17 @@ function anunciarLocalmente(config) {
     return; // sem http disponivel: o resto do uploader continua funcionando
   }
 
-  servidor.on("error", () => {
-    // Porta ocupada (outro uploader aberto) nao e motivo para abortar o upload.
+  servidor.on("error", (e) => {
+    // Porta ocupada quase sempre significa OUTRO uploader aberto — muitas vezes
+    // de uma copia antiga do projeto, com config diferente. Silenciar isso fazia
+    // os plugins receberem os dados da copia errada, e o sintoma (401 no export)
+    // nao apontava para ca. Falhar nao ajuda; avisar sim.
+    if (e && e.code === "EADDRINUSE") {
+      console.log("");
+      console.log("  AVISO  ja existe um uploader aberto nesta maquina.");
+      console.log("         Os plugins vao pegar a configuracao DELE, nao a desta pasta.");
+      console.log("         Feche a outra janela se a configuracao certa for a daqui.");
+    }
   });
   servidor.listen(PORTA_LOCAL, "127.0.0.1");
 }
