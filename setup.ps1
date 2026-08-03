@@ -189,42 +189,6 @@ if (-not $workerUrl) {
             }
         }
 
-        # --------------------------------------------------- token de acesso
-        # Sem AUTH_TOKEN o Worker aceita QUALQUER requisicao: quem descobrir a
-        # URL pode enviar exports, apagar projetos e escrever no quadro de
-        # apoiadores. Como ninguem ia parar para criar um token na mao, o
-        # instalador gera um e configura sozinho.
-        $tokenExistente = ""
-        if (Test-Path $configPath) {
-            try {
-                $antigo = Get-Content $configPath -Raw | ConvertFrom-Json
-                if ($antigo.authToken) { $tokenExistente = $antigo.authToken }
-            } catch {}
-        }
-
-        if ($tokenExistente) {
-            Ok "token de acesso ja configurado"
-            $authToken = $tokenExistente
-        } else {
-            Info "gerando token de acesso"
-            # 32 bytes aleatorios em hex: forte o bastante e sem caractere que
-            # atrapalhe em cabecalho HTTP ou linha de comando.
-            $bytes = New-Object byte[] 32
-            [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-            $authToken = ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
-
-            # O segredo vai pela entrada padrao: assim nao fica no historico do
-            # terminal nem em nenhum arquivo do projeto.
-            $r = $authToken | & cmd /c "npx wrangler secret put AUTH_TOKEN 2>&1"
-            if ($LASTEXITCODE -eq 0) {
-                Ok "token configurado no Worker"
-            } else {
-                Aviso "nao consegui gravar o token; o servidor ficara aberto"
-                Write-Host ($r | Out-String)
-                $authToken = ""
-            }
-        }
-
         Info "publicando o Worker"
         $deploy = Rodar "npx wrangler deploy"
         if ($deploy -match '(https://[a-z0-9\-\.]+\.workers\.dev)') {
@@ -234,6 +198,48 @@ if (-not $workerUrl) {
             Erro "o deploy nao devolveu uma URL. Saida:"
             Write-Host $deploy
             return
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
+# ------------------------------------------------------- 3b. token de acesso -
+# Passo PROPRIO, fora do bloco que publica o Worker. Ja esteve la dentro, e o
+# resultado foi que quem tinha o Worker no ar (o caminho rapido) nunca ganhava
+# token: a instalacao dizia "tudo pronto" com o servidor aberto para qualquer
+# um. Seguranca nao pode depender do caminho que a instalacao tomou.
+Titulo "3b. Token de acesso"
+
+$authToken = ""
+if (Test-Path $configPath) {
+    try {
+        $antigo = Get-Content $configPath -Raw | ConvertFrom-Json
+        if ($antigo.authToken) { $authToken = $antigo.authToken }
+    } catch {}
+}
+
+if ($authToken) {
+    Ok "token ja configurado"
+} else {
+    Info "gerando token e trancando o servidor"
+    # 32 bytes aleatorios em hex: forte, e sem caractere que atrapalhe em
+    # cabecalho HTTP ou em linha de comando.
+    $bytes = New-Object byte[] 32
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $authToken = ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
+
+    Push-Location "$root\cloudflare-worker"
+    try {
+        # Pela entrada padrao: o segredo nao entra no historico do terminal nem
+        # em nenhum arquivo do projeto.
+        $r = $authToken | & cmd /c "npx wrangler secret put AUTH_TOKEN 2>&1"
+        if ($LASTEXITCODE -eq 0) {
+            Ok "servidor protegido"
+        } else {
+            Aviso "nao consegui gravar o token - o servidor segue aberto"
+            Write-Host ($r | Out-String)
+            $authToken = ""
         }
     } finally {
         Pop-Location
