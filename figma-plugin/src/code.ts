@@ -1191,19 +1191,30 @@ figma.ui.onmessage = async (msg: any) => {
       let urlGuardada = (await figma.clientStorage.getAsync("workerUrl")) || "";
       let tokenGuardado = (await figma.clientStorage.getAsync("token")) || "";
 
-      // Primeira abertura: pergunta ao uploader, que roda na maquina e ja sabe
-      // o endereco e o token. Evita que a pessoa tenha que colar as mesmas duas
-      // coisas aqui e no Studio — errar uma delas produzia um 401 que aparecia
-      // como falha generica.
-      if (!urlGuardada) {
+      // Pergunta ao uploader, que roda na maquina e ja sabe o endereco e o
+      // token. Roda quando falta a URL OU o token: checar so a URL deixava de
+      // fora quem ja tinha o endereco salvo — e, no dia em que o servidor foi
+      // protegido, esse alguem passou a levar 401 em todo export sem entender
+      // por que.
+      if (!urlGuardada || !tokenGuardado) {
         try {
           const r = await fetch("http://127.0.0.1:34567/");
           const d: any = await r.json();
           if (d && d.source === "FigmaToRoblox-uploader" && d.workerUrl) {
-            urlGuardada = d.workerUrl;
-            if (d.authToken) tokenGuardado = d.authToken;
-            await figma.clientStorage.setAsync("workerUrl", urlGuardada);
-            await figma.clientStorage.setAsync("token", tokenGuardado);
+            // A URL so entra se estiver vazia: quem apontou para outro servidor
+            // de proposito nao pode ver o campo mudar sozinho.
+            if (!urlGuardada) {
+              urlGuardada = d.workerUrl;
+              await figma.clientStorage.setAsync("workerUrl", urlGuardada);
+            }
+
+            // O token so vale para o servidor que o uploader conhece — entregar
+            // a credencial de um servidor a outro seria pior que nao ter token.
+            const mesmoServidor = normUrl(urlGuardada) === normUrl(d.workerUrl);
+            if (mesmoServidor && d.authToken) {
+              tokenGuardado = d.authToken;
+              await figma.clientStorage.setAsync("token", tokenGuardado);
+            }
           }
         } catch (e) {
           // Uploader fechado e o caso normal antes de instalar: segue vazio.
