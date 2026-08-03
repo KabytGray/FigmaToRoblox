@@ -1188,9 +1188,31 @@ figma.on("selectionchange", reportSelection);
 figma.ui.onmessage = async (msg: any) => {
   try {
     if (msg.type === "load-settings") {
+      let urlGuardada = (await figma.clientStorage.getAsync("workerUrl")) || "";
+      let tokenGuardado = (await figma.clientStorage.getAsync("token")) || "";
+
+      // Primeira abertura: pergunta ao uploader, que roda na maquina e ja sabe
+      // o endereco e o token. Evita que a pessoa tenha que colar as mesmas duas
+      // coisas aqui e no Studio — errar uma delas produzia um 401 que aparecia
+      // como falha generica.
+      if (!urlGuardada) {
+        try {
+          const r = await fetch("http://127.0.0.1:34567/");
+          const d: any = await r.json();
+          if (d && d.source === "FigmaToRoblox-uploader" && d.workerUrl) {
+            urlGuardada = d.workerUrl;
+            if (d.authToken) tokenGuardado = d.authToken;
+            await figma.clientStorage.setAsync("workerUrl", urlGuardada);
+            await figma.clientStorage.setAsync("token", tokenGuardado);
+          }
+        } catch (e) {
+          // Uploader fechado e o caso normal antes de instalar: segue vazio.
+        }
+      }
+
       post("settings-loaded", {
-        workerUrl: (await figma.clientStorage.getAsync("workerUrl")) || "",
-        token: (await figma.clientStorage.getAsync("token")) || "",
+        workerUrl: urlGuardada,
+        token: tokenGuardado,
         scale: (await figma.clientStorage.getAsync("scale")) || 2,
         rasterize: (await figma.clientStorage.getAsync("rasterize")) !== false,
         constraints: (await figma.clientStorage.getAsync("constraints")) === true,

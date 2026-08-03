@@ -338,9 +338,13 @@ function anunciarLocalmente(config) {
     servidor = require("http").createServer((req, res) => {
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Content-Type", "application/json");
+      // O token vai junto de proposito: e o que permite aos plugins falarem
+      // com o Worker sem a pessoa colar nada. So sai por 127.0.0.1, ou seja,
+      // quem ja esta na maquina — que tambem poderia abrir o config.json.
       res.end(JSON.stringify({
         workerUrl: config.workerUrl,
         userId: config.userId,
+        authToken: config.authToken || "",
         source: "FigmaToRoblox-uploader"
       }));
     });

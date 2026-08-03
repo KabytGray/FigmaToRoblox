@@ -170,11 +170,23 @@ local function trimUrl(url)
 	return (url:gsub("/+$", ""))
 end
 
+--- Cabecalhos de toda chamada. O token so entra quando existe: servidor aberto
+--- ignora o cabecalho, servidor protegido exige — e sem ele todas as respostas
+--- viriam 401, que na tela apareceria como "falha ao importar".
+local function apiHeaders()
+	local headers = { ["Accept"] = "application/json" }
+	local token = Plugin:GetSetting("authToken")
+	if type(token) == "string" and token ~= "" then
+		headers["Authorization"] = "Bearer " .. token
+	end
+	return headers
+end
+
 function Api.get(baseUrl, route)
 	local response = HttpService:RequestAsync({
 		Url = trimUrl(baseUrl) .. route,
 		Method = "GET",
-		Headers = { ["Accept"] = "application/json" },
+		Headers = apiHeaders(),
 	})
 
 	if not response.Success then
@@ -4185,6 +4197,13 @@ task.spawn(function()
 
 	urlInput.Text = dados.workerUrl
 	Plugin:SetSetting("workerUrl", trimUrl(dados.workerUrl))
+
+	-- O token vem junto. Sem ele, um servidor protegido responderia 401 e a
+	-- pessoa veria "falha ao importar" sem pista do motivo.
+	if type(dados.authToken) == "string" and dados.authToken ~= "" then
+		Plugin:SetSetting("authToken", dados.authToken)
+	end
+
 	setStatus("Servidor detectado pelo uploader.", "ok")
 end)
 
