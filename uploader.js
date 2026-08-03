@@ -332,10 +332,46 @@ const PORTA_LOCAL = 34567;
  *
  * So escuta em 127.0.0.1: nada disto fica exposto na rede.
  */
+/** Pergunta no terminal e devolve a resposta em minusculas. */
+function perguntar(texto) {
+  return new Promise((resolve) => {
+    const rl = require("readline").createInterface({
+      input: process.stdin, output: process.stdout
+    });
+    rl.question(texto, (resposta) => {
+      rl.close();
+      resolve(String(resposta || "").trim().toLowerCase());
+    });
+  });
+}
+
+/** Pede ao uploader que ja esta na porta que se encerre. */
+function encerrarOutro() {
+  return new Promise((resolve) => {
+    const req = require("http").request({
+      host: "127.0.0.1", port: PORTA_LOCAL, path: "/encerrar", method: "POST", timeout: 4000
+    }, (res) => { res.resume(); res.on("end", () => resolve(res.statusCode === 200)); });
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => { req.destroy(); resolve(false); });
+    req.end();
+  });
+}
+
 function anunciarLocalmente(config) {
   let servidor;
   try {
     servidor = require("http").createServer((req, res) => {
+      // Handshake entre instancias: quem chega pede a quem esta para sair. Sem
+      // isto so restaria cacar PID por sistema operacional, ou conviver com dois
+      // uploaders — e o segundo serviria a configuracao errada aos plugins.
+      if (req.method === "POST" && req.url === "/encerrar") {
+        res.statusCode = 200;
+        res.end("ok");
+        console.log("\n  Outro uploader assumiu. Encerrando esta janela.");
+        setTimeout(() => process.exit(0), 150);
+        return;
+      }
+
       // Rele o config a cada consulta em vez de usar o que foi carregado no
       // inicio. Quem deixa o uploader aberto e roda o instalador (o caso normal
       // ao atualizar) teria um processo servindo dados velhos — foi exatamente
@@ -365,25 +401,45 @@ function anunciarLocalmente(config) {
     return; // sem http disponivel: o resto do uploader continua funcionando
   }
 
-  servidor.on("error", (e) => {
-    // Porta ocupada quase sempre significa OUTRO uploader aberto — muitas vezes
-    // de uma copia antiga do projeto, com config diferente. Silenciar isso fazia
-    // os plugins receberem os dados da copia errada, e o sintoma (401 no export)
-    // nao apontava para ca. Falhar nao ajuda; avisar sim.
-    if (e && e.code === "EADDRINUSE") {
+  // Devolve uma promessa para que o main espere a decisao antes de seguir: dois
+  // uploaders trabalhando ao mesmo tempo servem configuracoes diferentes aos
+  // plugins, e o sintoma disso (401 no export) nao aponta para ca.
+  return new Promise((resolve) => {
+    servidor.once("error", async (e) => {
+      if (!e || e.code !== "EADDRINUSE") return resolve();
+
       console.log("");
-      console.log("  AVISO  ja existe um uploader aberto nesta maquina.");
-      console.log("         Os plugins vao pegar a configuracao DELE, nao a desta pasta.");
-      console.log("         Feche a outra janela se a configuracao certa for a daqui.");
-    }
+      console.log("  Ja existe um uploader aberto nesta maquina.");
+      const r = await perguntar("  Usar este no lugar dele? (S/n) ");
+
+      if (r === "n") {
+        console.log("  Ok, mantendo o que ja estava aberto. Pode fechar esta janela.\n");
+        process.exit(0);
+      }
+
+      if (await encerrarOutro()) {
+        // Espera a porta ser liberada de fato antes de tentar de novo.
+        setTimeout(() => {
+          servidor.once("error", () => resolve());
+          servidor.listen(PORTA_LOCAL, "127.0.0.1", () => resolve());
+        }, 400);
+      } else {
+        console.log("  Nao consegui encerrar o outro (versao antiga?).");
+        console.log("  Feche a outra janela e abra esta de novo.\n");
+        process.exit(0);
+      }
+    });
+
+    servidor.listen(PORTA_LOCAL, "127.0.0.1", () => resolve());
   });
-  servidor.listen(PORTA_LOCAL, "127.0.0.1");
 }
 
 async function main() {
   const config = loadConfig();
   const once = process.argv.includes("--once");
-  if (!once) anunciarLocalmente(config);
+  // Aguarda: se houver outro uploader aberto, a pergunta acontece aqui, antes
+  // de esta janela comecar a trabalhar em paralelo com a outra.
+  if (!once) await anunciarLocalmente(config);
 
   console.log("");
   console.log(C.magenta + C.bold + "  FigmaToRoblox " + C.reset + C.dim + "uploader" + C.reset);
