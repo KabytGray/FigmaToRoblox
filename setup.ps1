@@ -154,13 +154,29 @@ if (-not $workerUrl) {
             Ok "wrangler.toml criado a partir do template"
         }
 
+        # Logica invertida de proposito: so pula o login quando o wrangler diz
+        # claramente que ESTA logado. Procurar a frase de erro falhava quando ele
+        # errava de outro jeito - a instalacao seguia como se tudo bem e quebrava
+        # la no deploy, com uma mensagem que nao apontava para o login.
         $conta = Rodar "npx wrangler whoami"
-        if ($conta -match "not authenticated|You are not") {
-            Info "abrindo o login da Cloudflare no navegador"
-            Write-Host "  (crie a conta gratuita se ainda nao tiver, e autorize)" -ForegroundColor DarkGray
-            & npx wrangler login
-        } else {
+        if ($conta -match "logged in|Account Name|associated with the email") {
             Ok "ja autenticado na Cloudflare"
+        } else {
+            Info "abrindo o login da Cloudflare no navegador"
+            Write-Host "  Nao tem conta? A propria pagina tem 'Sign up' - e gratuita" -ForegroundColor DarkGray
+            Write-Host "  e nao pede cartao." -ForegroundColor DarkGray
+            & npx wrangler login
+
+            # Confirma que funcionou: seguir sem login so adia o erro.
+            $conta = Rodar "npx wrangler whoami"
+            if ($conta -notmatch "logged in|Account Name|associated with the email") {
+                Erro "o login nao foi concluido."
+                Write-Host ""
+                Write-Host "  Autorize na janela do navegador e rode o comando de novo."
+                Write-Host ""
+                return
+            }
+            Ok "conta conectada"
         }
 
         $toml = Get-Content "wrangler.toml" -Raw
@@ -195,8 +211,32 @@ if (-not $workerUrl) {
             $workerUrl = $Matches[1]
             Ok "Worker no ar: $workerUrl"
         } else {
-            Erro "o deploy nao devolveu uma URL. Saida:"
-            Write-Host $deploy
+            # A saida crua do wrangler nao ajuda quem nunca usou Cloudflare. Os
+            # tropecos de conta nova sao poucos e reconheciveis - vale traduzir.
+            Write-Host ""
+            if ($deploy -match "workers\.dev subdomain|register a workers\.dev|subdomain") {
+                Erro "sua conta ainda nao tem um subdominio workers.dev."
+                Write-Host ""
+                Write-Host "  E o unico passo que a Cloudflare pede uma vez, na mao:"
+                Write-Host "   1. A pagina vai abrir agora"
+                Write-Host "   2. Em Compute (Workers), escolha um subdominio (o nome que quiser)"
+                Write-Host "   3. Volte aqui e cole o mesmo comando de instalacao"
+                Write-Host ""
+                Start-Process "https://dash.cloudflare.com/?to=/:account/workers/subdomain"
+            } elseif ($deploy -match "not authenticated|You are not|Authentication error|10000") {
+                Erro "a Cloudflare nao reconheceu o login."
+                Write-Host ""
+                Write-Host "  Rode o comando de instalacao de novo e autorize na janela do navegador."
+            } elseif ($deploy -match "exceeded|limit|quota") {
+                Erro "a conta bateu num limite da Cloudflare."
+                Write-Host ""
+                Write-Host "  O plano gratuito permite este projeto. Se ja tem outros Workers,"
+                Write-Host "  apague um que nao use em dash.cloudflare.com e tente de novo."
+            } else {
+                Erro "o deploy falhou. Saida do wrangler:"
+                Write-Host $deploy
+            }
+            Write-Host ""
             return
         }
     } finally {
