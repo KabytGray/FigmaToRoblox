@@ -23,7 +23,7 @@ if (html.includes("__AVATAR_B64__")) {
 
 // Icones de classe do proprio Studio, extraidos de
 // content/studio_svg_textures/Shared/InsertableObjects/Dark/Standard.
-// Regenerar com: node tools/extract-icons.js
+// O JSON ja vem pronto em assets/ — nao ha nada a rodar aqui.
 if (html.includes("__CLASS_ICONS__")) {
   if (!fs.existsSync(iconsPath)) {
     console.error("assets/classicons.json nao encontrado — os icones de classe ficarao vazios.");
