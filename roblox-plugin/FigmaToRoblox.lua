@@ -4188,18 +4188,35 @@ task.spawn(function()
 	local temToken = type(guardado) == "string" and guardado ~= ""
 	if temUrl and temToken then return end
 
-	local ok, resposta = pcall(function()
-		return HttpService:RequestAsync({
-			Url = "http://127.0.0.1:34567/",
-			Method = "GET",
-		})
-	end)
-	if not ok or not resposta or not resposta.Success then return end
+	-- Tenta por ate 2 minutos, a cada 6 segundos.
+	--
+	-- Uma tentativa unica so funcionava se o uploader ja estivesse aberto quando
+	-- o Studio carregou. Na primeira instalacao a ordem costuma ser a inversa —
+	-- a pessoa abre o Studio, ve o painel vazio, e so entao abre o uploader.
+	-- Sem repetir, o campo ficaria vazio para sempre e ela concluiria que a
+	-- deteccao automatica nao existe.
+	local dados
+	for _ = 1, 20 do
+		local ok, resposta = pcall(function()
+			return HttpService:RequestAsync({
+				Url = "http://127.0.0.1:34567/",
+				Method = "GET",
+			})
+		end)
 
-	local lido, dados = pcall(function() return HttpService:JSONDecode(resposta.Body) end)
-	if not lido or type(dados) ~= "table" then return end
-	if dados.source ~= "FigmaToRoblox-uploader" then return end
-	if type(dados.workerUrl) ~= "string" or dados.workerUrl == "" then return end
+		if ok and resposta and resposta.Success then
+			local lido, corpo = pcall(function() return HttpService:JSONDecode(resposta.Body) end)
+			if lido and type(corpo) == "table" and corpo.source == "FigmaToRoblox-uploader"
+				and type(corpo.workerUrl) == "string" and corpo.workerUrl ~= "" then
+				dados = corpo
+				break
+			end
+		end
+
+		task.wait(6)
+	end
+
+	if not dados then return end
 
 	-- So preenche a URL se estiver vazia: quem apontou o plugin para outro
 	-- servidor de proposito nao pode ver o campo mudar sozinho.
