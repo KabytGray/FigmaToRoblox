@@ -373,6 +373,20 @@
               overflow:hidden;text-overflow:ellipsis;border-top:1px solid var(--line)}
   .imgsempty{padding:10px var(--gut) 12px;font-size:10px;color:var(--t3);border-bottom:1px solid var(--line)}
 
+  /* lista de camadas marcadas */
+  .markempty{padding:10px var(--gut) 12px;font-size:10px;color:var(--t3);border-bottom:1px solid var(--line)}
+  .marklist{padding:2px 0 6px;border-bottom:1px solid var(--line);max-height:132px;overflow-y:auto}
+  .markrow{display:flex;align-items:center;gap:6px;padding:4px var(--gut);cursor:pointer}
+  .markrow:hover{background:var(--hover)}
+  .markrow .nm{flex:1;min-width:0;font-size:10px;color:var(--t1);
+               white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .markrow .bg{font-size:9px;padding:1px 5px;border-radius:999px;background:var(--sunken);
+               color:var(--t2);white-space:nowrap;flex-shrink:0}
+  .markrow .rm{opacity:0;flex-shrink:0;border:0;background:transparent;color:var(--t3);
+               cursor:pointer;font-size:11px;line-height:1;padding:2px 4px}
+  .markrow:hover .rm{opacity:1}
+  .markrow .rm:hover{color:var(--err)}
+
   /* resultado */
   .result{display:none;border-bottom:1px solid var(--line)}
   .result.on{display:block}
@@ -613,6 +627,14 @@
       </div>
       <div class="expl" id="explain"></div>
 
+      <!-- Tudo que foi marcado no arquivo, nao so na selecao atual. Uma marca
+           feita por engano (ou para testar) so aparecia no resultado do export;
+           aqui ela fica visivel antes, com um clique para achar e outro para
+           desfazer. -->
+      <div class="head">Marcados no arquivo<span class="n" id="markCount"></span></div>
+      <div class="markempty" id="markEmpty">Nada marcado. As camadas seguem a conversão automática.</div>
+      <div class="marklist" id="markList" style="display:none"></div>
+
       <div class="head"><svg class="ic"><use href="#i-img-stack"/></svg>Imagens<span class="n" id="imgCount"></span></div>
       <div class="imgsempty" id="imgsEmpty">Nenhuma imagem na seleção atual.</div>
       <div class="imgs" id="imgs" style="display:none"></div>
@@ -728,9 +750,14 @@
   function busy(on, label){
     st.busy = on;
     var b = $("exportBtn");
-    b.disabled = on || st.selection === 0;
+    // Desabilitado SO durante o export. Antes tambem travava quando a UI achava
+    // que nada estava selecionado — e essa contagem e uma copia, que fica velha
+    // se um evento se perde. Dava o botao morto com a selecao visivel na tela.
+    // Quem decide agora e o plugin, que le a selecao viva no clique e responde
+    // com o motivo exato.
+    b.disabled = on;
     b.innerHTML = '<svg class="ic"><use href="#i-play"/></svg>' + (on ? (label || "Exportando…") : "Exportar");
-    $("analyzeBtn").disabled = on || st.selection === 0;
+    $("analyzeBtn").disabled = on;
   }
 
   // Extrai o numero de qualquer coisa que a pessoa cole: o link do perfil, o
@@ -1085,6 +1112,51 @@
     $("tagCount").textContent = n || "";
   }
 
+  // Rotulos legiveis: "CanvasGroup" e claro, mas "BTN" e "BACK" nao dizem nada
+  // para quem marcou uma vez e esqueceu.
+  var NOME_MARCA = {
+    IMG: "imagem", NATIVE: "nativo", BTN: "botão", SCROLL: "scroll",
+    SLICE: "9-slice", FRONT: "frente", BACK: "fundo", ignorar: "ignorar"
+  };
+
+  function renderMarked(items){
+    items = items || [];
+    $("markCount").textContent = items.length || "";
+    $("markEmpty").style.display = items.length ? "none" : "";
+    var lista = $("markList");
+    lista.style.display = items.length ? "" : "none";
+    lista.innerHTML = "";
+
+    for (var i = 0; i < items.length; i++){
+      (function(item){
+        var row = document.createElement("div");
+        row.className = "markrow";
+        row.title = "Clique para achar esta camada no Figma";
+
+        var nm = document.createElement("span");
+        nm.className = "nm";
+        nm.textContent = item.name;
+
+        var bg = document.createElement("span");
+        bg.className = "bg";
+        bg.textContent = NOME_MARCA[item.mark] || item.mark;
+
+        var rm = document.createElement("button");
+        rm.className = "rm";
+        rm.textContent = "✕";
+        rm.title = "Tirar a marca";
+        rm.addEventListener("click", function(e){
+          e.stopPropagation();
+          send({ type:"unmark", id: item.id });
+        });
+
+        row.addEventListener("click", function(){ send({ type:"reveal", id: item.id }); });
+        row.appendChild(nm); row.appendChild(bg); row.appendChild(rm);
+        lista.appendChild(row);
+      })(items[i]);
+    }
+  }
+
   /* --------------------------------------------------------------- social */
   var popT = null;
   function showPop(kind){
@@ -1231,7 +1303,6 @@
     tags[t].addEventListener("mouseenter", function(){ setExplain(explFor(this.dataset.tag)); });
     tags[t].addEventListener("mouseleave", function(){ setExplain(DEF_EXPL); });
     tags[t].addEventListener("click", function(){
-      if (st.selection === 0){ status("err","Selecione camadas primeiro"); return; }
       send({ type:"tag", tag: this.dataset.tag });
     });
   }
@@ -1353,7 +1424,14 @@
     }
     if (m.type === "preview") renderPreview(m);
 
-    if (m.type === "selection"){ renderSelection(m.count, m.name); renderActiveTags(m.active); }
+    if (m.type === "marked"){ renderMarked(m.items); return; }
+
+    if (m.type === "selection"){
+      renderSelection(m.count, m.name); renderActiveTags(m.active);
+      // A marcacao muda com o clique nas etiquetas, que reporta selecao
+      // logo depois: atualizar a lista aqui a mantem sempre verdadeira.
+      send({ type:"list-marked" });
+    }
 
     if (m.type === "progress"){
       if (typeof m.pct === "number") progress(m.pct);
@@ -1396,6 +1474,7 @@
   $("cmdText").value = DEFAULT_CMD;
   setExplain(DEF_EXPL);
   send({ type:"load-settings" });
+  send({ type:"list-marked" });
 })();
 </script>
 </body>

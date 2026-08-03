@@ -866,6 +866,22 @@ async function runExport(workerUrl: string, token: string, scale: number, raster
   const sel = figma.currentPage.selection;
   if (sel.length === 0) { post("error", { message: "Selecione ao menos um frame." }); return; }
 
+  // Diagnostico antes de converter: sem isto, uma selecao inteira de camadas
+  // ocultas terminava em "Nada exportavel", que soa como defeito do plugin em
+  // vez de apontar o que esta errado no arquivo.
+  const ocultas = sel.filter(n => n.visible === false && !tagOf(n.name, "NATIVE"));
+  const puladas = sel.filter(n => isExcluded(n));
+  if (ocultas.length === sel.length) {
+    post("error", { message: sel.length === 1
+      ? "\"" + sel[0].name + "\" esta oculta no Figma. Mostre a camada (o olho na lista) e exporte de novo."
+      : "Todas as " + sel.length + " camadas selecionadas estao ocultas no Figma." });
+    return;
+  }
+  if (puladas.length === sel.length) {
+    post("error", { message: "Tudo o que esta selecionado foi marcado como \"ignorar\". Remova a marca para exportar." });
+    return;
+  }
+
   post("progress", { message: "Lendo " + sel.length + " elemento(s)...", pct: 10 });
 
   const ctx = newCtx(scale, rasterize, constraints);
@@ -944,6 +960,48 @@ async function runExport(workerUrl: string, token: string, scale: number, raster
 figma.showUI(__html__, { width: 820, height: 700, title: "FigmaToRoblox" });
 
 const ALL_TAGS = ["IMG", "NATIVE", "BTN", "SCROLL", "FRONT", "BACK"];
+
+/**
+ * Lista tudo que foi marcado a mao no arquivo — tag no nome ou classe forcada.
+ *
+ * Existe porque uma marca feita por engano (ou so para testar) ficava invisivel:
+ * a UI so mostrava as marcas da selecao do momento. A pessoa exportava, o
+ * resultado saia diferente do esperado, e nao havia onde olhar para descobrir o
+ * porque.
+ */
+function reportMarked() {
+  const marcados: Array<{ id: string; name: string; mark: string }> = [];
+
+  const visita = (nos: readonly SceneNode[]) => {
+    for (const node of nos) {
+      const tag = ALL_TAGS.filter(t => tagOf(node.name, t))[0] || "";
+      const cls = node.getPluginData("rbxClass") || "";
+      const pulado = node.getPluginData("rbxSkip") === "1";
+
+      if (tag || cls || pulado) {
+        marcados.push({
+          id: node.id,
+          // Sem a tag no nome: ela ja aparece na etiqueta ao lado.
+          name: node.name.replace(/\[[A-Z]+\]\s*/g, "").trim() || node.name,
+          mark: pulado ? "ignorar" : (cls || tag)
+        });
+      }
+
+      // Teto para nao travar em arquivo grande; o aviso vai junto na UI.
+      if (marcados.length >= 200) return;
+      const filhos = (node as any).children;
+      if (filhos) visita(filhos as readonly SceneNode[]);
+    }
+  };
+
+  try {
+    visita(figma.currentPage.children);
+  } catch (e) {
+    // Arvore inacessivel nao pode derrubar o painel inteiro.
+  }
+
+  post("marked", { items: marcados });
+}
 
 function reportSelection() {
   const sel = figma.currentPage.selection;
@@ -1249,6 +1307,33 @@ figma.ui.onmessage = async (msg: any) => {
       return;
     }
 
+    if (msg.type === "list-marked") { reportMarked(); return; }
+
+    // Seleciona a camada clicada na lista e leva a viewport ate ela: sem isso a
+    // lista diria "esta marcado" sem ajudar a achar num arquivo grande.
+    if (msg.type === "reveal") {
+      const alvo = await figma.getNodeByIdAsync(msg.id);
+      if (alvo && "visible" in alvo) {
+        figma.currentPage.selection = [alvo as SceneNode];
+        figma.viewport.scrollAndZoomIntoView([alvo as SceneNode]);
+      }
+      return;
+    }
+
+    // Tira a marca de uma camada especifica, direto da lista.
+    if (msg.type === "unmark") {
+      const alvo = await figma.getNodeByIdAsync(msg.id);
+      if (alvo && "name" in alvo) {
+        const no = alvo as SceneNode;
+        no.name = no.name.replace(/\[[A-Z]+\]\s*/g, "").trim() || no.name;
+        no.setPluginData("rbxClass", "");
+        no.setPluginData("rbxSkip", "");
+      }
+      reportMarked();
+      reportSelection();
+      return;
+    }
+
     if (msg.type === "check-server") {
       const estado = await checarServidor(msg.workerUrl || "");
       post("server-status", { ok: estado === "ok", reason: estado });
@@ -1293,6 +1378,13 @@ figma.ui.onmessage = async (msg: any) => {
 
     if (msg.type === "tag") {
       const sel = figma.currentPage.selection;
+      // Valida aqui, com a selecao viva: a UI guarda uma copia da contagem que
+      // pode estar velha, e recusar por causa dela travava a marcacao com o
+      // Figma mostrando as camadas selecionadas.
+      if (sel.length === 0) {
+        post("error", { message: "Selecione as camadas que quer marcar." });
+        return;
+      }
       for (const node of sel) {
         const stripped = node.name.replace(/\[(IMG|NATIVE|BACK|FRONT|BTN|SCROLL|SLICE)\]\s*/g, "").trim();
         node.name = msg.tag ? "[" + msg.tag + "] " + stripped : stripped;
